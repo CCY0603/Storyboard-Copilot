@@ -57,6 +57,7 @@ export type ExportImageNodeResultKind =
 
 export interface ExportImageNodeData extends NodeImageData {
   resultKind?: ExportImageNodeResultKind;
+  model?: string;
 }
 
 export interface GroupNodeData extends NodeDisplayData {

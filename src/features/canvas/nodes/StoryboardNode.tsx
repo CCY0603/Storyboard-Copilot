@@ -1117,8 +1117,8 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         )
         : null}
 
-      <div className="mt-2 flex shrink-0 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="mt-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+        <div className="flex items-center gap-1.5">
           <div ref={exportSettingsTriggerRef} className="nodrag relative flex">
             <UiChipButton
               active={isExportPanelOpen}
@@ -1143,7 +1143,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
           </div>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           <UiButton
             size="sm"
             variant="muted"

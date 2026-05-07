@@ -31,6 +31,7 @@ import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canv
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { getModelProvider } from '@/features/canvas/models';
 
 type ImageNodeProps = NodeProps & {
   id: string;
@@ -81,6 +82,16 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
     () => resolveNodeDisplayName(type as CanvasNodeType, data),
     [data, type]
   );
+
+  const modelSubtitle = useMemo(() => {
+    if (!isExportResultNode) return undefined;
+    const modelId = (data as ExportImageNodeData).model;
+    if (!modelId) return undefined;
+    const provider = getModelProvider(modelId.split('/')[0] ?? '');
+    const slashIndex = modelId.lastIndexOf('/');
+    const shortId = slashIndex >= 0 ? modelId.slice(slashIndex + 1) : modelId;
+    return `${provider.label} · ${shortId}`;
+  }, [data, isExportResultNode]);
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -169,6 +180,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
           : <Sparkles className="h-4 w-4" />}
         titleText={resolvedTitle}
         titleClassName="inline-block max-w-[220px] truncate whitespace-nowrap align-bottom"
+        subtitle={modelSubtitle}
         editable
         onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
       />

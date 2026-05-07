@@ -35,14 +35,16 @@ pub async fn split_image(
     rows: u32,
     cols: u32,
     line_thickness: Option<u32>,
+    col_offsets: Option<Vec<u32>>,
+    row_offsets: Option<Vec<u32>>,
 ) -> Result<Vec<String>, String> {
     let safe_rows = rows.max(1);
     let safe_cols = cols.max(1);
     let requested_line = line_thickness.unwrap_or(0);
 
     info!(
-        "Splitting image into {}x{}, line thickness={}",
-        safe_rows, safe_cols, requested_line
+        "Splitting image into {}x{}, line thickness={}, col_offsets={:?}, row_offsets={:?}",
+        safe_rows, safe_cols, requested_line, col_offsets, row_offsets
     );
 
     let image_data = STANDARD
@@ -54,35 +56,19 @@ pub async fn split_image(
 
     let (width, height) = img.dimensions();
     let resolved_line = resolve_line_thickness(width, height, safe_rows, safe_cols, requested_line);
-    let usable_width = width.saturating_sub((safe_cols.saturating_sub(1)).saturating_mul(resolved_line));
-    let usable_height = height.saturating_sub((safe_rows.saturating_sub(1)).saturating_mul(resolved_line));
 
-    if usable_width < safe_cols || usable_height < safe_rows {
-        return Err("分割线过粗，无法完成切割".to_string());
-    }
-
-    let column_widths = split_sizes(usable_width, safe_cols);
-    let row_heights = split_sizes(usable_height, safe_rows);
-
-    let mut x_offsets = Vec::with_capacity(safe_cols as usize);
-    let mut cursor_x = 0_u32;
-    for col in 0..safe_cols {
-        x_offsets.push(cursor_x);
-        cursor_x = cursor_x.saturating_add(column_widths[col as usize]);
-        if col < safe_cols - 1 {
-            cursor_x = cursor_x.saturating_add(resolved_line);
-        }
-    }
-
-    let mut y_offsets = Vec::with_capacity(safe_rows as usize);
-    let mut cursor_y = 0_u32;
-    for row in 0..safe_rows {
-        y_offsets.push(cursor_y);
-        cursor_y = cursor_y.saturating_add(row_heights[row as usize]);
-        if row < safe_rows - 1 {
-            cursor_y = cursor_y.saturating_add(resolved_line);
-        }
-    }
+    let (column_widths, x_offsets) = compute_column_layout(
+        width,
+        safe_cols,
+        resolved_line,
+        col_offsets.as_deref(),
+    )?;
+    let (row_heights, y_offsets) = compute_row_layout(
+        height,
+        safe_rows,
+        resolved_line,
+        row_offsets.as_deref(),
+    )?;
 
     let mut results = Vec::new();
 
@@ -90,10 +76,10 @@ pub async fn split_image(
         for col in 0..safe_cols {
             let x = x_offsets[col as usize];
             let y = y_offsets[row as usize];
-            let width = column_widths[col as usize];
-            let height = row_heights[row as usize];
+            let w = column_widths[col as usize];
+            let h = row_heights[row as usize];
 
-            let cropped = img.crop_imm(x, y, width, height);
+            let cropped = img.crop_imm(x, y, w, h);
 
             let mut buffer = Cursor::new(Vec::new());
             cropped
@@ -116,6 +102,8 @@ pub async fn split_image_source(
     rows: u32,
     cols: u32,
     line_thickness: Option<u32>,
+    col_offsets: Option<Vec<u32>>,
+    row_offsets: Option<Vec<u32>>,
 ) -> Result<Vec<String>, String> {
     let started = Instant::now();
     let trimmed_source = source.trim();
@@ -128,8 +116,8 @@ pub async fn split_image_source(
     let requested_line = line_thickness.unwrap_or(0);
 
     info!(
-        "Splitting source image into {}x{}, line thickness={}",
-        safe_rows, safe_cols, requested_line
+        "Splitting source image into {}x{}, line thickness={}, col_offsets={:?}, row_offsets={:?}",
+        safe_rows, safe_cols, requested_line, col_offsets, row_offsets
     );
 
     let (source_bytes, _source_ext) = resolve_source_bytes(trimmed_source).await?;
@@ -139,35 +127,19 @@ pub async fn split_image_source(
 
     let (width, height) = image.dimensions();
     let resolved_line = resolve_line_thickness(width, height, safe_rows, safe_cols, requested_line);
-    let usable_width = width.saturating_sub((safe_cols.saturating_sub(1)).saturating_mul(resolved_line));
-    let usable_height = height.saturating_sub((safe_rows.saturating_sub(1)).saturating_mul(resolved_line));
 
-    if usable_width < safe_cols || usable_height < safe_rows {
-        return Err("分割线过粗，无法完成切割".to_string());
-    }
-
-    let column_widths = split_sizes(usable_width, safe_cols);
-    let row_heights = split_sizes(usable_height, safe_rows);
-
-    let mut x_offsets = Vec::with_capacity(safe_cols as usize);
-    let mut cursor_x = 0_u32;
-    for col in 0..safe_cols {
-        x_offsets.push(cursor_x);
-        cursor_x = cursor_x.saturating_add(column_widths[col as usize]);
-        if col < safe_cols - 1 {
-            cursor_x = cursor_x.saturating_add(resolved_line);
-        }
-    }
-
-    let mut y_offsets = Vec::with_capacity(safe_rows as usize);
-    let mut cursor_y = 0_u32;
-    for row in 0..safe_rows {
-        y_offsets.push(cursor_y);
-        cursor_y = cursor_y.saturating_add(row_heights[row as usize]);
-        if row < safe_rows - 1 {
-            cursor_y = cursor_y.saturating_add(resolved_line);
-        }
-    }
+    let (column_widths, x_offsets) = compute_column_layout(
+        width,
+        safe_cols,
+        resolved_line,
+        col_offsets.as_deref(),
+    )?;
+    let (row_heights, y_offsets) = compute_row_layout(
+        height,
+        safe_rows,
+        resolved_line,
+        row_offsets.as_deref(),
+    )?;
 
     let mut results = Vec::with_capacity((safe_rows * safe_cols) as usize);
 
@@ -175,9 +147,9 @@ pub async fn split_image_source(
         for col in 0..safe_cols {
             let x = x_offsets[col as usize];
             let y = y_offsets[row as usize];
-            let width = column_widths[col as usize];
-            let height = row_heights[row as usize];
-            let cropped = image.crop_imm(x, y, width, height);
+            let w = column_widths[col as usize];
+            let h = row_heights[row as usize];
+            let cropped = image.crop_imm(x, y, w, h);
 
             let mut buffer = Cursor::new(Vec::new());
             cropped
@@ -197,6 +169,136 @@ pub async fn split_image_source(
     );
 
     Ok(results)
+}
+
+/// 计算列布局，返回 (column_widths, x_offsets)
+/// col_offsets 是每条垂直分割线的像素位置（不包括边界0和最大宽度），长度应为 cols-1
+fn compute_column_layout(
+    width: u32,
+    cols: u32,
+    line_thickness: u32,
+    col_offsets: Option<&[u32]>,
+) -> Result<(Vec<u32>, Vec<u32>), String> {
+    if cols <= 1 {
+        return Ok((vec![width], vec![0]));
+    }
+
+    // 如果提供了有效的自定义偏移，使用它们
+    if let Some(offsets) = col_offsets {
+        if offsets.len() as u32 == cols - 1 {
+            let mut column_widths = Vec::with_capacity(cols as usize);
+            let mut x_offsets = Vec::with_capacity(cols as usize);
+            
+            let mut cursor_x = 0u32;
+            for (i, &offset) in offsets.iter().enumerate() {
+                // 确保偏移在有效范围内
+                let safe_offset = offset.min(width.saturating_sub(line_thickness));
+                let col_width = safe_offset.saturating_sub(cursor_x);
+                
+                if col_width == 0 {
+                    return Err("分割线位置无效，列宽不能为0".to_string());
+                }
+                
+                column_widths.push(col_width);
+                x_offsets.push(cursor_x);
+                cursor_x = safe_offset.saturating_add(line_thickness);
+            }
+            
+            // 最后一列
+            let last_col_width = width.saturating_sub(cursor_x);
+            if last_col_width == 0 {
+                return Err("分割线位置无效，最后一列宽度不能为0".to_string());
+            }
+            column_widths.push(last_col_width);
+            x_offsets.push(cursor_x);
+            
+            return Ok((column_widths, x_offsets));
+        }
+    }
+
+    // 使用均匀分布
+    let usable_width = width.saturating_sub((cols - 1).saturating_mul(line_thickness));
+    if usable_width < cols {
+        return Err("分割线过粗，无法完成切割".to_string());
+    }
+
+    let column_widths = split_sizes(usable_width, cols);
+    let mut x_offsets = Vec::with_capacity(cols as usize);
+    let mut cursor_x = 0u32;
+    for col in 0..cols {
+        x_offsets.push(cursor_x);
+        cursor_x = cursor_x.saturating_add(column_widths[col as usize]);
+        if col < cols - 1 {
+            cursor_x = cursor_x.saturating_add(line_thickness);
+        }
+    }
+
+    Ok((column_widths, x_offsets))
+}
+
+/// 计算行布局，返回 (row_heights, y_offsets)
+/// row_offsets 是每条水平分割线的像素位置（不包括边界0和最大高度），长度应为 rows-1
+fn compute_row_layout(
+    height: u32,
+    rows: u32,
+    line_thickness: u32,
+    row_offsets: Option<&[u32]>,
+) -> Result<(Vec<u32>, Vec<u32>), String> {
+    if rows <= 1 {
+        return Ok((vec![height], vec![0]));
+    }
+
+    // 如果提供了有效的自定义偏移，使用它们
+    if let Some(offsets) = row_offsets {
+        if offsets.len() as u32 == rows - 1 {
+            let mut row_heights = Vec::with_capacity(rows as usize);
+            let mut y_offsets = Vec::with_capacity(rows as usize);
+            
+            let mut cursor_y = 0u32;
+            for (i, &offset) in offsets.iter().enumerate() {
+                // 确保偏移在有效范围内
+                let safe_offset = offset.min(height.saturating_sub(line_thickness));
+                let row_height = safe_offset.saturating_sub(cursor_y);
+                
+                if row_height == 0 {
+                    return Err("分割线位置无效，行高不能为0".to_string());
+                }
+                
+                row_heights.push(row_height);
+                y_offsets.push(cursor_y);
+                cursor_y = safe_offset.saturating_add(line_thickness);
+            }
+            
+            // 最后一行
+            let last_row_height = height.saturating_sub(cursor_y);
+            if last_row_height == 0 {
+                return Err("分割线位置无效，最后一行高度不能为0".to_string());
+            }
+            row_heights.push(last_row_height);
+            y_offsets.push(cursor_y);
+            
+            return Ok((row_heights, y_offsets));
+        }
+    }
+
+    // 使用均匀分布
+    let usable_height = height.saturating_sub((rows - 1).saturating_mul(line_thickness));
+    if usable_height < rows {
+        return Err("分割线过粗，无法完成切割".to_string());
+    }
+
+    let row_heights = split_sizes(usable_height, rows);
+    let mut y_offsets = Vec::with_capacity(rows as usize);
+    let mut cursor_y = 0u32;
+    for row in 0..rows {
+        y_offsets.push(cursor_y);
+        cursor_y = cursor_y.saturating_add(row_heights[row as usize]);
+        if row < rows - 1 {
+            cursor_y = cursor_y.saturating_add(line_thickness);
+        }
+    }
+
+    Ok((row_heights, y_offsets))
 }
 
 #[derive(Debug, Clone, Deserialize)]

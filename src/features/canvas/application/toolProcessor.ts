@@ -38,7 +38,9 @@ export class CanvasToolProcessor implements ToolProcessor {
         Number(options.cols ?? metadata?.gridCols ?? 3),
         Number(options.lineThicknessPercent),
         Number(options.lineThickness ?? 0),
-        metadata?.frameNotes
+        metadata?.frameNotes,
+        this.parseOffsetArray(options.colOffsets),
+        this.parseOffsetArray(options.rowOffsets)
       );
     }
 
@@ -206,13 +208,73 @@ export class CanvasToolProcessor implements ToolProcessor {
     return canvasHeight - boxHeight / 2 - 24;
   }
 
+  private parseOffsetArray(value: unknown): number[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+    const parsed = value
+      .map(v => Number(v))
+      .filter(v => Number.isFinite(v) && v !== 0);
+    return parsed.length > 0 ? parsed : undefined;
+  }
+
+  /**
+   * 将前端相对偏移量（每列/行相对平均值的偏移）转换为后端期望的绝对分割线位置。
+   * 例如：3列宽900px，默认均分[300,300,300]，偏移[50,-30,0]→列宽[350,270,280]→绝对位置[350,620]
+   */
+  private convertRelativeToAbsolute(
+    totalSize: number,
+    segments: number,
+    lineThickness: number,
+    relativeOffsets?: number[]
+  ): number[] | undefined {
+    if (!relativeOffsets || relativeOffsets.length === 0 || segments <= 1) {
+      return undefined;
+    }
+
+    const usableSize = totalSize - (segments - 1) * lineThickness;
+    if (usableSize < segments) {
+      return undefined;
+    }
+
+    const avgSize = usableSize / segments;
+
+    // 计算每段实际尺寸
+    const sizes: number[] = [];
+    let totalUsed = 0;
+    for (let i = 0; i < segments; i++) {
+      const offset = relativeOffsets[i] ?? 0;
+      const size = Math.max(1, Math.floor(avgSize + offset));
+      sizes.push(size);
+      totalUsed += size;
+    }
+    // 修正最后一段确保总和正确
+    sizes[segments - 1] += usableSize - totalUsed;
+    if (sizes[segments - 1] < 1) {
+      sizes[segments - 1] = 1;
+    }
+
+    // 计算绝对分割线位置（共 segments-1 条分割线）
+    const positions: number[] = [];
+    let cursor = 0;
+    for (let i = 0; i < segments - 1; i++) {
+      cursor += sizes[i];
+      positions.push(cursor);
+      cursor += lineThickness;
+    }
+
+    return positions;
+  }
+
   private async splitStoryboard(
     sourceImage: string,
     rows: number,
     cols: number,
     lineThicknessPercent: number,
     lineThicknessPxFallback: number,
-    frameNotes?: string[]
+    frameNotes?: string[],
+    colOffsets?: number[],
+    rowOffsets?: number[]
   ): Promise<ToolProcessorResult> {
     const normalizedRows = Number.isFinite(rows) ? rows : 3;
     const normalizedCols = Number.isFinite(cols) ? cols : 3;
@@ -237,13 +299,24 @@ export class CanvasToolProcessor implements ToolProcessor {
       throw new Error('分镜行列必须大于 0');
     }
 
+    // 将相对偏移量转换为绝对像素位置（后端 Rust 期望绝对位置）
+    const image = await loadImageElement(sourceImage);
+    const absoluteColOffsets = this.convertRelativeToAbsolute(
+      Math.max(1, image.naturalWidth), safeCols, safeLineThickness, colOffsets
+    );
+    const absoluteRowOffsets = this.convertRelativeToAbsolute(
+      Math.max(1, image.naturalHeight), safeRows, safeLineThickness, rowOffsets
+    );
+
     let outputs: string[];
     try {
       outputs = await this.splitGateway.split(
         sourceImage,
         safeRows,
         safeCols,
-        safeLineThickness
+        safeLineThickness,
+        absoluteColOffsets,
+        absoluteRowOffsets
       );
     } catch {
       // Fallback when Tauri command is unavailable or fails.

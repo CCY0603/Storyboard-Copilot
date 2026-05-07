@@ -621,6 +621,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     const modelId = nodeData.model ?? DEFAULT_IMAGE_MODEL_ID;
     return getImageModel(modelId);
   }, [nodeData.model]);
+
+
   const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
   const effectiveExtraParams = useMemo(
     () => ({

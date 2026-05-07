@@ -279,6 +279,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     const modelId = data.model ?? DEFAULT_IMAGE_MODEL_ID;
     return getImageModel(modelId);
   }, [data.model]);
+
   const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
   const effectiveExtraParams = useMemo(
     () => ({
@@ -492,6 +493,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         generationDurationMs,
         resultKind: 'generic',
         displayName: resultNodeTitle,
+        model: selectedModel.id,
       }
     );
     addEdge(id, newNodeId);
