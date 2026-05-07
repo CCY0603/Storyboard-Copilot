@@ -209,6 +209,17 @@ export class CanvasToolProcessor implements ToolProcessor {
   }
 
   private parseOffsetArray(value: unknown): number[] | undefined {
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          const numbers = parsed.map(v => Number(v)).filter(v => Number.isFinite(v) && v !== 0);
+          return numbers.length > 0 ? numbers : undefined;
+        }
+      } catch {
+        return undefined;
+      }
+    }
     if (!Array.isArray(value)) {
       return undefined;
     }

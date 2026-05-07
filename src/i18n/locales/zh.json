@@ -90,7 +90,8 @@
       "aiImageGeneration": "AI 图片",
       "storyboard": "分镜节点",
       "storyboardGen": "分镜生成",
-      "textAnnotation": "文本注释"
+      "textAnnotation": "文本注释",
+      "videoGeneration": "视频生成"
     },
     "imageNode": {
       "title": "图片节点",
@@ -112,7 +113,14 @@
       "promptRequired": "请输入提示词",
       "apiKeyRequired": "请在设置中填写 API Key",
       "resultTitle": "结果图片",
-      "promptPlaceholder": "描述任何你想要生成或编辑的内容"
+      "promptPlaceholder": "描述任何你想要生成或编辑的内容",
+      "selectToEdit": "选中后在下方输入提示词生成或编辑图片"
+    },
+    "videoGen": {
+      "promptRequired": "请输入提示词",
+      "apiKeyRequired": "请在设置中填写 API Key",
+      "resultTitle": "生成视频",
+      "promptPlaceholder": "描述你想要生成的视频内容"
     },
     "upload": {
       "uploadedAlt": "已上传图片",
@@ -209,7 +217,7 @@
     "model": "模型",
     "enterApiKey": "输入 API Key",
     "nanoBananaProModel": "Nano Banana Pro 接入模型",
-    "nanoBananaProModelDesc": "切换该供应商 Nano Banana Pro 的接入点，当一个接入点失效时可尝试切换，具体请查阅\u003cmodelListLink\u003e模型列表\u003c/modelListLink\u003e。",
+    "nanoBananaProModelDesc": "切换该供应商 Nano Banana Pro 的接入点，当一个接入点失效时可尝试切换，具体请查阅<modelListLink>模型列表</modelListLink>。",
     "addProvider": "添加供应商",
     "providerPpioName": "派欧云",
     "comingSoon": "即将推出...",
@@ -234,11 +242,11 @@
     "downloadPresetPaths": "下载预设路径",
     "downloadPresetPathsDesc": "用于节点工具条下载菜单中的快速保存目录（最多 8 个）",
     "storyboardGenKeepStyleConsistent": "分镜图风格与参考图保持一致",
-    "storyboardGenKeepStyleConsistentDesc": "启用后，分镜生成提示词会追加\u201c图片风格与参考图保持一致\u201d。",
+    "storyboardGenKeepStyleConsistentDesc": "启用后，分镜生成提示词会追加“图片风格与参考图保持一致”。",
     "storyboardGenDisableTextInImage": "分镜图禁止生成描述文本",
-    "storyboardGenDisableTextInImageDesc": "启用后，分镜生成提示词会追加\u201c禁止添加描述文本\u201d。",
+    "storyboardGenDisableTextInImageDesc": "启用后，分镜生成提示词会追加“禁止添加描述文本”。",
     "ignoreAtTagWhenCopyingAndGenerating": "复制/保存文本时忽略 @ 标签",
-    "ignoreAtTagWhenCopyingAndGeneratingDesc": "启用后，复制文本和写入图片分镜元数据时会忽略类似\u201c@图1\u201d的标签；发送生成请求时仅移除\u201c@\u201d并保留\u201c图1\u201d。",
+    "ignoreAtTagWhenCopyingAndGeneratingDesc": "启用后，复制文本和写入图片分镜元数据时会忽略类似“@图1”的标签；发送生成请求时仅移除“@”并保留“图1”。",
     "useUploadFilenameAsNodeTitle": "上传节点自动使用文件名作为标题",
     "useUploadFilenameAsNodeTitleDesc": "启用后，新上传图片会默认使用文件名作为节点标题（仍可双击手动重命名）。",
     "downloadPathPlaceholder": "输入目录路径，例如 /Users/name/Pictures/Storyboard 或 D:\\\\Images\\\\Storyboard",
@@ -263,11 +271,11 @@
     "enableUpdateDialog": "启用更新提示弹窗",
     "enableUpdateDialogDesc": "检测到新版本时显示更新提示弹窗。",
     "enableStoryboardGenGridPreviewShortcut": "启用分镜网格预览快捷键",
-    "enableStoryboardGenGridPreviewShortcutDesc": "启用后，在分镜生成节点按住 Ctrl + Alt + Shift 点击\u201c生成\u201d会直接输出网格预览图，不发送 AI 请求。",
+    "enableStoryboardGenGridPreviewShortcutDesc": "启用后，在分镜生成节点按住 Ctrl + Alt + Shift 点击“生成”会直接输出网格预览图，不发送 AI 请求。",
     "showStoryboardGenAdvancedRatioControls": "显示分镜比例高级控制",
-    "showStoryboardGenAdvancedRatioControlsDesc": "启用后显示单格/整体比例信息和\u201c整体比/单格比\u201d切换；关闭时默认按单格比逻辑运行。",
+    "showStoryboardGenAdvancedRatioControlsDesc": "启用后显示单格/整体比例信息和“整体比/单格比”切换；关闭时默认按单格比逻辑运行。",
     "storyboardGenAutoInferEmptyFrame": "空分镜自动推测",
-    "storyboardGenAutoInferEmptyFrameDesc": "启用后，分镜生成时如果某个格子没有填写内容，会自动追加\u201c依据之前的内容进行推测\u201d。",
+    "storyboardGenAutoInferEmptyFrameDesc": "启用后，分镜生成时如果某个格子没有填写内容，会自动追加“依据之前的内容进行推测”。",
     "showNodePrice": "在节点右上角显示价格",
     "showNodePriceDesc": "实时根据当前模型、分辨率和附加参数显示本次运行的预计消费。",
     "priceDisplayCurrencyMode": "价格显示币种",
@@ -286,14 +294,7 @@
     "checkingUpdate": "正在检查更新...",
     "checkUpdateHasUpdate": "检测到新版本。",
     "checkUpdateUpToDate": "当前已是最新版本。",
-    "checkUpdateFailed": "检查更新失败，请稍后重试。",
-    "zi32ApiKey": "32zi API Key",
-    "zi32ApiKeyPlaceholder": "输入 32zi API Key",
-    "zi32ApiKeyDesc": "32zi (ai.32zi.com) OpenAI 兼容中转 API，支持 GPT-Image 和 Gemini 系列模型。",
-    "zi32Website": "访问 32zi 网站",
-    "zi32Models": "支持的模型",
-    "zi32OpenaiModels": "OpenAI 系列（按量计费）",
-    "zi32GoogleModels": "Google 系列（按次计费）"
+    "checkUpdateFailed": "检查更新失败，请稍后重试。"
   },
   "pricing": {
     "nativePrice": "原币种：{{value}}",
@@ -318,3 +319,4 @@
     "copyReport": "复制报错信息"
   }
 }
+

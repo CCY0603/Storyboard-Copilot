@@ -1,0 +1,526 @@
+import {
+  type KeyboardEvent,
+  memo,
+  useMemo,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+
+import {
+  CANVAS_NODE_TYPES,
+  EXPORT_RESULT_NODE_DEFAULT_WIDTH,
+  EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
+  type VideoGenNodeData,
+} from '@/features/canvas/domain/canvasNodes';
+import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
+import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
+import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import {
+  canvasAiGateway,
+  graphImageResolver,
+} from '@/features/canvas/application/canvasServices';
+import { resolveErrorContent, showErrorDialog } from '@/features/canvas/application/errorDialog';
+import {
+  resolveImageDisplayUrl,
+} from '@/features/canvas/application/imageData';
+import {
+  buildGenerationErrorReport,
+  CURRENT_RUNTIME_SESSION_ID,
+  getRuntimeDiagnostics,
+  type GenerationDebugContext,
+} from '@/features/canvas/application/generationErrorReport';
+import {
+  DEFAULT_VIDEO_MODEL_ID,
+  getVideoModel,
+  listVideoModels,
+  listModelProviders,
+  isVideoModel,
+} from '@/features/canvas/models';
+import {
+  NODE_CONTROL_CHIP_CLASS,
+  NODE_CONTROL_ICON_CLASS,
+  NODE_CONTROL_MODEL_CHIP_CLASS,
+  NODE_CONTROL_PARAMS_CHIP_CLASS,
+  NODE_CONTROL_PRIMARY_BUTTON_CLASS,
+} from '@/features/canvas/ui/nodeControlStyles';
+import { UiButton } from '@/components/ui';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+
+type VideoGenNodeProps = NodeProps & {
+  id: string;
+  data: VideoGenNodeData;
+  selected?: boolean;
+};
+
+interface AspectRatioChoice {
+  value: string;
+  label: string;
+}
+
+const VIDEO_GEN_NODE_MIN_WIDTH = 400;
+const VIDEO_GEN_NODE_MIN_HEIGHT = 340;
+const VIDEO_GEN_NODE_MAX_WIDTH = 1200;
+const VIDEO_GEN_NODE_MAX_HEIGHT = 900;
+const VIDEO_GEN_NODE_DEFAULT_WIDTH = 480;
+const VIDEO_GEN_NODE_DEFAULT_HEIGHT = 480;
+
+function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedPrompt) {
+    return fallbackTitle;
+  }
+  return normalizedPrompt;
+}
+
+export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGenNodeProps) => {
+  const { t } = useTranslation();
+  const updateNodeInternals = useUpdateNodeInternals();
+  const [error, setError] = useState<string | null>(null);
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
+  const promptDraftRef = useRef(promptDraft);
+
+  const nodes = useCanvasStore((state) => state.nodes);
+  const edges = useCanvasStore((state) => state.edges);
+  const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
+  const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const addNode = useCanvasStore((state) => state.addNode);
+  const findNodePosition = useCanvasStore((state) => state.findNodePosition);
+  const addEdge = useCanvasStore((state) => state.addEdge);
+  const apiKeys = useSettingsStore((state) => state.apiKeys);
+
+  const incomingImages = useMemo(
+    () => graphImageResolver.collectInputImages(id, nodes, edges),
+    [id, nodes, edges]
+  );
+
+  const videoModels = useMemo(() => listVideoModels(), []);
+  const modelProviders = useMemo(() => listModelProviders(), []);
+
+  // Get providers that have video models
+  const videoProviders = useMemo(() => {
+    const providerIds = new Set(videoModels.map((m) => m.providerId));
+    return modelProviders.filter((p) => providerIds.has(p.id));
+  }, [modelProviders, videoModels]);
+
+  // Get models filtered by selected provider
+  const selectedProviderId = useMemo(() => {
+    const modelId = data.model ?? DEFAULT_VIDEO_MODEL_ID;
+    const model = getVideoModel(modelId);
+    return model?.providerId ?? videoProviders[0]?.id ?? 'zi32';
+  }, [data.model, videoProviders]);
+
+  const filteredVideoModels = useMemo(
+    () => videoModels.filter((m) => m.providerId === selectedProviderId),
+    [videoModels, selectedProviderId]
+  );
+
+  const selectedModel = useMemo(() => {
+    const modelId = data.model ?? DEFAULT_VIDEO_MODEL_ID;
+    return getVideoModel(modelId) ?? videoModels[0];
+  }, [data.model, videoModels]);
+
+  const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
+
+  const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
+    () => selectedModel.aspectRatios.map((item) => ({ value: item.value, label: item.label })),
+    [selectedModel.aspectRatios]
+  );
+
+  const durationOptions = useMemo(() => {
+    return selectedModel.durations ?? [5, 10, 15];
+  }, [selectedModel.durations]);
+
+  const resolutionOptions = useMemo(() => {
+    return selectedModel.resolutions ?? [{ value: '720P', label: '720P' }];
+  }, [selectedModel.resolutions]);
+
+  const selectedResolution = useMemo(
+    () =>
+      resolutionOptions.find((item) => item.value === selectedModel.defaultResolution) ??
+      resolutionOptions[0],
+    [resolutionOptions, selectedModel.defaultResolution]
+  );
+
+  const selectedAspectRatio = useMemo(
+    () =>
+      aspectRatioOptions.find((item) => item.value === selectedModel.defaultAspectRatio) ??
+      aspectRatioOptions[0],
+    [aspectRatioOptions, selectedModel.defaultAspectRatio]
+  );
+
+  const selectedDuration = useMemo(
+    () => data.duration ?? selectedModel.defaultDuration ?? 5,
+    [data.duration, selectedModel.defaultDuration]
+  );
+
+  const resolvedTitle = useMemo(
+    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.videoGen, data),
+    [data]
+  );
+
+  const resolvedWidth = Math.max(VIDEO_GEN_NODE_MIN_WIDTH, Math.round(width ?? VIDEO_GEN_NODE_DEFAULT_WIDTH));
+  const resolvedHeight = Math.max(VIDEO_GEN_NODE_MIN_HEIGHT, Math.round(height ?? VIDEO_GEN_NODE_DEFAULT_HEIGHT));
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, resolvedHeight, resolvedWidth, updateNodeInternals]);
+
+  useEffect(() => {
+    const externalPrompt = data.prompt ?? '';
+    if (externalPrompt !== promptDraftRef.current) {
+      promptDraftRef.current = externalPrompt;
+      setPromptDraft(externalPrompt);
+    }
+  }, [data.prompt]);
+
+  const commitPromptDraft = useCallback((nextPrompt: string) => {
+    promptDraftRef.current = nextPrompt;
+    updateNodeData(id, { prompt: nextPrompt });
+  }, [id, updateNodeData]);
+
+  useEffect(() => {
+    if (data.model !== selectedModel.id) {
+      updateNodeData(id, { model: selectedModel.id });
+    }
+  }, [data.model, id, selectedModel.id, updateNodeData]);
+
+  const handleGenerate = useCallback(async () => {
+    const prompt = promptDraft.trim();
+    if (!prompt) {
+      const errorMessage = t('node.videoGen.promptRequired');
+      setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
+    if (!providerApiKey) {
+      const errorMessage = t('node.videoGen.apiKeyRequired');
+      setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
+    const generationDurationMs = selectedModel.expectedDurationMs ?? 120000;
+    const generationStartedAt = Date.now();
+    const resultNodeTitle = buildAiResultNodeTitle(prompt, t('node.videoGen.resultTitle'));
+    const runtimeDiagnostics = await getRuntimeDiagnostics();
+    setError(null);
+
+    const newNodePosition = findNodePosition(
+      id,
+      EXPORT_RESULT_NODE_DEFAULT_WIDTH,
+      EXPORT_RESULT_NODE_LAYOUT_HEIGHT
+    );
+    const newNodeId = addNode(
+      CANVAS_NODE_TYPES.exportImage,
+      newNodePosition,
+      {
+        isGenerating: true,
+        generationStartedAt,
+        generationDurationMs,
+        resultKind: 'generic',
+        displayName: resultNodeTitle,
+        model: selectedModel.id,
+      }
+    );
+    addEdge(id, newNodeId);
+
+    try {
+      await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+
+      const videoUrl = await canvasAiGateway.generateVideo({
+        prompt,
+        model: selectedModel.id,
+        size: selectedResolution.value,
+        aspectRatio: selectedAspectRatio.value,
+        referenceImages: incomingImages,
+        extraParams: { duration: selectedDuration, resolution: selectedResolution.value },
+        duration: selectedDuration,
+      });
+
+      const generationDebugContext: GenerationDebugContext = {
+        sourceType: 'videoGen',
+        providerId: selectedModel.providerId,
+        requestModel: selectedModel.id,
+        requestSize: selectedAspectRatio.value,
+        requestAspectRatio: selectedAspectRatio.value,
+        prompt,
+        extraParams: { duration: selectedDuration },
+        referenceImageCount: incomingImages.length,
+        referenceImagePlaceholders: [],
+        appVersion: runtimeDiagnostics.appVersion,
+        osName: runtimeDiagnostics.osName,
+        osVersion: runtimeDiagnostics.osVersion,
+        osBuild: runtimeDiagnostics.osBuild,
+        userAgent: runtimeDiagnostics.userAgent,
+      };
+
+      updateNodeData(newNodeId, {
+        imageUrl: videoUrl,
+        previewImageUrl: videoUrl,
+        aspectRatio: selectedAspectRatio.value,
+        isGenerating: false,
+        generationStartedAt: null,
+        generationJobId: null,
+        generationProviderId: null,
+        generationClientSessionId: null,
+        generationDebugContext,
+      });
+    } catch (generationError) {
+      const resolvedError = resolveErrorContent(generationError, t('ai.error'));
+      const generationDebugContext: GenerationDebugContext = {
+        sourceType: 'videoGen',
+        providerId: selectedModel.providerId,
+        requestModel: selectedModel.id,
+        requestSize: selectedAspectRatio.value,
+        requestAspectRatio: selectedAspectRatio.value,
+        prompt,
+        extraParams: { duration: selectedDuration },
+        referenceImageCount: incomingImages.length,
+        referenceImagePlaceholders: [],
+        appVersion: runtimeDiagnostics.appVersion,
+        osName: runtimeDiagnostics.osName,
+        osVersion: runtimeDiagnostics.osVersion,
+        osBuild: runtimeDiagnostics.osBuild,
+        userAgent: runtimeDiagnostics.userAgent,
+      };
+      const reportText = buildGenerationErrorReport({
+        errorMessage: resolvedError.message,
+        errorDetails: resolvedError.details,
+        context: generationDebugContext,
+      });
+      setError(resolvedError.message);
+      void showErrorDialog(
+        resolvedError.message,
+        t('common.error'),
+        resolvedError.details,
+        reportText
+      );
+      updateNodeData(newNodeId, {
+        isGenerating: false,
+        generationStartedAt: null,
+        generationJobId: null,
+        generationProviderId: null,
+        generationClientSessionId: null,
+        generationError: resolvedError.message,
+        generationErrorDetails: resolvedError.details ?? null,
+        generationDebugContext,
+      });
+    }
+  }, [
+    addNode,
+    addEdge,
+    providerApiKey,
+    findNodePosition,
+    promptDraft,
+    id,
+    incomingImages,
+    selectedModel,
+    selectedAspectRatio.value,
+    selectedDuration,
+    t,
+    updateNodeData,
+  ]);
+
+  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      void handleGenerate();
+    }
+  };
+
+  return (
+    <div
+      ref={rootRef}
+      className={`
+        group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150
+        ${selected
+          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
+          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'}
+      `}
+      style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
+      onClick={() => setSelectedNode(id)}
+    >
+      <NodeHeader
+        className={NODE_HEADER_FLOATING_POSITION_CLASS}
+        icon={<Sparkles className="h-4 w-4" />}
+        titleText={resolvedTitle}
+        editable
+        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
+      />
+
+      {/* Reference Image Section - compact */}
+      {incomingImages.length > 0 && (
+        <div className="mb-1.5 shrink-0 flex items-center gap-1.5">
+          <span className="text-[11px] text-text-muted shrink-0">参考图</span>
+          <div className="flex items-center gap-1 overflow-hidden">
+            {incomingImages.slice(0, 3).map((imageUrl, index) => (
+              <div key={index} className="h-8 w-8 shrink-0">
+                <img
+                  src={resolveImageDisplayUrl(imageUrl)}
+                  alt={`Ref ${index + 1}`}
+                  className="h-full w-full rounded object-cover"
+                />
+              </div>
+            ))}
+            {incomingImages.length > 3 && (
+              <span className="text-[10px] text-text-muted">+{incomingImages.length - 3}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Prompt Input */}
+      <div className="relative min-h-[80px] flex-1 rounded-lg border border-[rgba(255,255,255,0.1)] bg-bg-dark/45 p-2">
+        <textarea
+          value={promptDraft}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setPromptDraft(nextValue);
+            commitPromptDraft(nextValue);
+          }}
+          onKeyDown={handlePromptKeyDown}
+          onMouseDown={(event) => event.stopPropagation()}
+          placeholder={t('node.videoGen.promptPlaceholder')}
+          className="ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-text-dark outline-none placeholder:text-text-muted/80"
+        />
+      </div>
+
+      {/* Controls */}
+      <div className="mt-2 flex shrink-0 flex-wrap items-center gap-2">
+        {/* Provider Select */}
+        <select
+          value={selectedProviderId}
+          onChange={(e) => {
+            const providerId = e.target.value;
+            const providerModels = videoModels.filter((m) => m.providerId === providerId);
+            if (providerModels.length > 0) {
+              updateNodeData(id, { model: providerModels[0].id });
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className={`shrink-0 rounded border border-[rgba(255,255,255,0.1)] bg-bg-dark px-2 py-1 text-xs text-text-dark ${NODE_CONTROL_CHIP_CLASS}`}
+        >
+          {videoProviders.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.label}
+            </option>
+          ))}
+        </select>
+
+        {/* Model Select */}
+        <select
+          value={selectedModel.id}
+          onChange={(e) => {
+            updateNodeData(id, { model: e.target.value });
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className={`min-w-[100px] shrink-0 rounded border border-[rgba(255,255,255,0.1)] bg-bg-dark px-2 py-1 text-xs text-text-dark ${NODE_CONTROL_MODEL_CHIP_CLASS}`}
+        >
+          {filteredVideoModels.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.displayName}
+            </option>
+          ))}
+        </select>
+
+        {/* Aspect Ratio Select */}
+        <select
+          value={selectedAspectRatio.value}
+          onChange={(e) => {
+            updateNodeData(id, { aspectRatio: e.target.value });
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className={`shrink-0 rounded border border-[rgba(255,255,255,0.1)] bg-bg-dark px-2 py-1 text-xs text-text-dark ${NODE_CONTROL_PARAMS_CHIP_CLASS}`}
+        >
+          {aspectRatioOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        {/* Resolution Select */}
+        {resolutionOptions.length > 1 && (
+          <select
+            value={selectedResolution.value}
+            onChange={(e) => {
+              updateNodeData(id, { resolution: e.target.value });
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className={`shrink-0 rounded border border-[rgba(255,255,255,0.1)] bg-bg-dark px-2 py-1 text-xs text-text-dark ${NODE_CONTROL_PARAMS_CHIP_CLASS}`}
+          >
+            {resolutionOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* Duration Select */}
+        {durationOptions.length > 1 && (
+          <select
+            value={selectedDuration}
+            onChange={(e) => {
+              updateNodeData(id, { duration: parseInt(e.target.value, 10) });
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className={`shrink-0 rounded border border-[rgba(255,255,255,0.1)] bg-bg-dark px-2 py-1 text-xs text-text-dark ${NODE_CONTROL_PARAMS_CHIP_CLASS}`}
+          >
+            {durationOptions.map((duration) => (
+              <option key={duration} value={duration}>
+                {duration}s
+              </option>
+            ))}
+          </select>
+        )}
+
+        <div className="ml-auto" />
+
+        <UiButton
+          onClick={(event) => {
+            event.stopPropagation();
+            void handleGenerate();
+          }}
+          variant="primary"
+          className={`shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
+        >
+          <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
+          {t('canvas.generate')}
+        </UiButton>
+      </div>
+
+      {error && <div className="mt-1 shrink-0 text-xs text-red-400">{error}</div>}
+
+      <Handle
+        type="target"
+        id="target"
+        position={Position.Left}
+        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+      />
+      <Handle
+        type="source"
+        id="source"
+        position={Position.Right}
+        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+      />
+      <NodeResizeHandle
+        minWidth={VIDEO_GEN_NODE_MIN_WIDTH}
+        minHeight={VIDEO_GEN_NODE_MIN_HEIGHT}
+        maxWidth={VIDEO_GEN_NODE_MAX_WIDTH}
+        maxHeight={VIDEO_GEN_NODE_MAX_HEIGHT}
+      />
+    </div>
+  );
+});
+
+VideoGenNode.displayName = 'VideoGenNode';

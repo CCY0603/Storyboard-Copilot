@@ -3,10 +3,10 @@ use std::sync::Arc;
 use super::AIProvider;
 
 pub mod ppio;
-pub mod zi32;
 pub mod grsai;
 pub mod kie;
 pub mod fal;
+pub mod zi32;
 
 pub use fal::FalProvider;
 pub use grsai::GrsaiProvider;

@@ -8,6 +8,7 @@ export const CANVAS_NODE_TYPES = {
   group: 'groupNode',
   storyboardSplit: 'storyboardNode',
   storyboardGen: 'storyboardGenNode',
+  videoGen: 'videoGenNode',
 } as const;
 
 export type CanvasNodeType = (typeof CANVAS_NODE_TYPES)[keyof typeof CANVAS_NODE_TYPES];
@@ -76,6 +77,15 @@ export interface ImageEditNodeData extends NodeImageData {
   size: ImageSize;
   requestAspectRatio?: string;
   extraParams?: Record<string, unknown>;
+  isGenerating?: boolean;
+  generationStartedAt?: number | null;
+  generationDurationMs?: number;
+}
+
+export interface VideoGenNodeData extends NodeImageData {
+  prompt: string;
+  model: string;
+  duration: number;
   isGenerating?: boolean;
   generationStartedAt?: number | null;
   generationDurationMs?: number;

@@ -89,13 +89,6 @@ function resolveLineThicknessPxFromPercent(
   return clampInteger(rawPixelThickness, 0, maxAllowed);
 }
 
-function splitSizes(total: number, segments: number): number[] {
-  const base = Math.floor(total / segments);
-  const remainder = total % segments;
-
-  return Array.from({ length: segments }, (_value, index) => base + (index < remainder ? 1 : 0));
-}
-
 function computeSplitLayout(
   imageWidth: number,
   imageHeight: number,
@@ -455,8 +448,8 @@ export function SplitStoryboardToolEditor({ sourceImageUrl, options, onOptionsCh
         rows: nextRows,
         cols: nextCols,
         lineThicknessPercent: nextLineThicknessPercent,
-        colOffsets: nextColOffsets,
-        rowOffsets: nextRowOffsets,
+        colOffsets: JSON.stringify(nextColOffsets),
+        rowOffsets: JSON.stringify(nextRowOffsets),
       });
     },
     [cols, colOffsets, lineThicknessPercent, naturalSize, onOptionsChange, options, rowOffsets, rows]
@@ -589,8 +582,8 @@ export function SplitStoryboardToolEditor({ sourceImageUrl, options, onOptionsCh
       // 将最终偏移量写回 options，确保切割时使用拖拽后的位置
       onOptionsChange({
         ...options,
-        colOffsets,
-        rowOffsets,
+        colOffsets: JSON.stringify(colOffsets),
+        rowOffsets: JSON.stringify(rowOffsets),
       });
       setDragState({ type: null, index: -1, startMouseX: 0, startMouseY: 0, startOffsetLeft: 0, startOffsetRight: 0 });
     }

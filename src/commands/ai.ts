@@ -206,3 +206,118 @@ export async function getGenerateImageJob(jobId: string): Promise<GenerationJobS
 export async function listModels(): Promise<string[]> {
   return await invoke('list_models');
 }
+
+// Video generation types
+export interface VideoGenerateRequest extends GenerateRequest {
+  duration?: number;
+}
+
+export type VideoJobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'not_found';
+
+export interface VideoJobStatus {
+  job_id: string;
+  status: VideoJobState;
+  result?: string | null;
+  error?: string | null;
+}
+
+export async function generateVideo(request: VideoGenerateRequest): Promise<string> {
+  const startedAt = performance.now();
+  console.info('[AI] generate_video request', {
+    ...sanitizeGenerateRequestForLog(request as GenerateRequest),
+    duration: request.duration,
+    tauri: isTauri(),
+  });
+
+  if (!isTauri()) {
+    throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
+  }
+
+  // Convert to standard GenerateRequest with extra_params for duration
+  const generateRequest: GenerateRequest = {
+    ...request,
+    extra_params: {
+      ...request.extra_params,
+      duration: request.duration ?? 5,
+    },
+  };
+
+  try {
+    const rawResult = await invoke<unknown>('generate_image', { request: generateRequest });
+    if (typeof rawResult !== 'string') {
+      throw createErrorWithDetails(
+        'Video generation returned non-string payload',
+        truncateText(
+          (() => {
+            try {
+              return JSON.stringify(rawResult, null, 2);
+            } catch {
+              return String(rawResult);
+            }
+          })(),
+          2000
+        )
+      );
+    }
+    const result = rawResult.trim();
+    if (!result) {
+      throw createErrorWithDetails('Video generation returned empty result');
+    }
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    console.info('[AI] generate_video success', {
+      elapsedMs,
+      resultPreview: truncateText(result, 220),
+    });
+    return result;
+  } catch (error) {
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    const normalizedError = normalizeInvokeError(error);
+    console.error('[AI] generate_video failed', {
+      elapsedMs,
+      request: sanitizeGenerateRequestForLog(generateRequest),
+      error,
+      normalizedError,
+    });
+    const commandError: ErrorWithDetails = new Error(normalizedError.message);
+    commandError.details = normalizedError.details;
+    throw commandError;
+  }
+}
+
+export async function submitGenerateVideoJob(request: VideoGenerateRequest): Promise<string> {
+  console.info('[AI] submit_generate_video_job request', {
+    ...sanitizeGenerateRequestForLog(request as GenerateRequest),
+    duration: request.duration,
+    tauri: isTauri(),
+  });
+
+  if (!isTauri()) {
+    throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
+  }
+
+  const generateRequest: GenerateRequest = {
+    ...request,
+    extra_params: {
+      ...request.extra_params,
+      duration: request.duration ?? 5,
+    },
+  };
+
+  const jobId = await invoke<string>('submit_generate_image_job', { request: generateRequest });
+  if (typeof jobId !== 'string' || !jobId.trim()) {
+    throw new Error('submit_generate_video_job returned invalid job id');
+  }
+  return jobId.trim();
+}
+
+export async function getGenerateVideoJob(jobId: string): Promise<VideoJobStatus> {
+  if (!isTauri()) {
+    throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
+  }
+
+  const result = await invoke<VideoJobStatus>('get_generate_image_job', { jobId });
+  if (!result || typeof result !== 'object' || typeof result.status !== 'string') {
+    throw new Error('get_generate_video_job returned invalid payload');
+  }
+  return result;
+}

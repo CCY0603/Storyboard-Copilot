@@ -31,7 +31,7 @@ import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canv
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { getModelProvider } from '@/features/canvas/models';
+import { getModelProvider, isVideoModel } from '@/features/canvas/models';
 
 type ImageNodeProps = NodeProps & {
   id: string;
@@ -152,6 +152,14 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
     return picked ? resolveImageDisplayUrl(picked) : null;
   }, [data.imageUrl, data.previewImageUrl, zoom]);
 
+  // Check if the result is a video
+  const isVideoResult = useMemo(() => {
+    const modelId = (data as ExportImageNodeData).model;
+    if (modelId && isVideoModel(modelId)) return true;
+    if (data.imageUrl && /\.(mp4|webm|mov)(\?|$)/i.test(data.imageUrl)) return true;
+    return false;
+  }, [data]);
+
   // 获取原图 URL 用于查看器
   const originalImageUrl = useMemo(() => {
     if (!data.imageUrl) return null;
@@ -189,12 +197,20 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
         className={`relative h-full w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-[rgba(127,29,29,0.2)]' : 'bg-bg-dark'}`}
       >
         {data.imageUrl ? (
-          <CanvasNodeImage
-            src={imageSource ?? ''}
-            alt={isExportResultNode ? t('node.imageNode.resultAlt') : t('node.imageNode.generatedAlt')}
-            viewerSourceUrl={originalImageUrl}
-            className="h-full w-full object-contain"
-          />
+          isVideoResult ? (
+            <video
+              src={imageSource ?? ''}
+              controls
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <CanvasNodeImage
+              src={imageSource ?? ''}
+              alt={isExportResultNode ? t('node.imageNode.resultAlt') : t('node.imageNode.generatedAlt')}
+              viewerSourceUrl={originalImageUrl}
+              className="h-full w-full object-contain"
+            />
+          )
         ) : hasGenerationError ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-red-300">
             <AlertTriangle className="h-7 w-7 opacity-90" />
