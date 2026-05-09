@@ -216,6 +216,8 @@
     "apiKey": "API Key",
     "model": "模型",
     "enterApiKey": "输入 API Key",
+    "alignmentEnabled": "启用对齐辅助线和吸附",
+    "alignmentEnabledDesc": "拖拽节点时显示对齐辅助线并自动吸附到附近节点边缘",
     "nanoBananaProModel": "Nano Banana Pro 接入模型",
     "nanoBananaProModelDesc": "切换该供应商 Nano Banana Pro 的接入点，当一个接入点失效时可尝试切换，具体请查阅<modelListLink>模型列表</modelListLink>。",
     "addProvider": "添加供应商",

@@ -1,21 +1,26 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import {
-  DEFAULT_GRSAI_CREDIT_TIER_ID,
-  PRICE_DISPLAY_CURRENCY_MODES,
-  type GrsaiCreditTierId,
-  type PriceDisplayCurrencyMode,
-} from '@/features/canvas/pricing/types';
 
-export type UiRadiusPreset = 'compact' | 'default' | 'large';
-export type ThemeTonePreset = 'neutral' | 'warm' | 'cool';
-export type CanvasEdgeRoutingMode = 'spline' | 'orthogonal' | 'smartOrthogonal';
-export type ProviderApiKeys = Record<string, string>;
-export const DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL = 'nano-banana-pro';
+export type Theme = 'dark' | 'light' | 'system';
+export type ThemeTone = 'neutral' | 'warm' | 'cool';
+export type EdgeStyle = 'smoothstep' | 'straight' | 'step';
+export type Language = 'zh' | 'en';
+export type PromptLanguage = 'zh' | 'en' | 'auto';
+export type PromptMode = 'simple' | 'advanced';
 
-interface SettingsState {
-  isHydrated: boolean;
-  apiKeys: ProviderApiKeys;
+export interface SettingsState {
+  theme: Theme;
+  themeTone: ThemeTone;
+  edgeStyle: EdgeStyle;
+  language: Language;
+  showWelcome: boolean;
+  enablePreviewPanel: boolean;
+  showToolbarOnHover: boolean;
+  usePromptLibrary: boolean;
+  promptLanguage: PromptLanguage;
+  promptMode: PromptMode;
+  alignmentEnabled: boolean;
+  apiKeys: Record<string, string>;
   grsaiNanoBananaProModel: string;
   hideProviderGuidePopover: boolean;
   downloadPresetPaths: string[];
@@ -27,17 +32,28 @@ interface SettingsState {
   enableStoryboardGenGridPreviewShortcut: boolean;
   showStoryboardGenAdvancedRatioControls: boolean;
   showNodePrice: boolean;
-  priceDisplayCurrencyMode: PriceDisplayCurrencyMode;
+  priceDisplayCurrencyMode: 'auto' | 'cny' | 'usd';
   usdToCnyRate: number;
   preferDiscountedPrice: boolean;
-  grsaiCreditTierId: GrsaiCreditTierId;
-  uiRadiusPreset: UiRadiusPreset;
-  themeTonePreset: ThemeTonePreset;
+  grsaiCreditTierId: string;
+  uiRadiusPreset: 'compact' | 'default' | 'large';
+  themeTonePreset: 'neutral' | 'warm' | 'cool';
   accentColor: string;
-  canvasEdgeRoutingMode: CanvasEdgeRoutingMode;
+  canvasEdgeRoutingMode: 'spline' | 'orthogonal' | 'smartOrthogonal';
   autoCheckAppUpdateOnLaunch: boolean;
   enableUpdateDialog: boolean;
-  setProviderApiKey: (providerId: string, key: string) => void;
+  setTheme: (theme: Theme) => void;
+  setThemeTone: (tone: ThemeTone) => void;
+  setEdgeStyle: (style: EdgeStyle) => void;
+  setLanguage: (language: Language) => void;
+  setShowWelcome: (show: boolean) => void;
+  setEnablePreviewPanel: (enabled: boolean) => void;
+  setShowToolbarOnHover: (show: boolean) => void;
+  setUsePromptLibrary: (enabled: boolean) => void;
+  setPromptLanguage: (language: PromptLanguage) => void;
+  setPromptMode: (mode: PromptMode) => void;
+  setAlignmentEnabled: (enabled: boolean) => void;
+  setProviderApiKey: (providerId: string, apiKey: string) => void;
   setGrsaiNanoBananaProModel: (model: string) => void;
   setHideProviderGuidePopover: (hide: boolean) => void;
   setDownloadPresetPaths: (paths: string[]) => void;
@@ -49,277 +65,174 @@ interface SettingsState {
   setEnableStoryboardGenGridPreviewShortcut: (enabled: boolean) => void;
   setShowStoryboardGenAdvancedRatioControls: (enabled: boolean) => void;
   setShowNodePrice: (enabled: boolean) => void;
-  setPriceDisplayCurrencyMode: (mode: PriceDisplayCurrencyMode) => void;
+  setPriceDisplayCurrencyMode: (mode: 'auto' | 'cny' | 'usd') => void;
   setUsdToCnyRate: (rate: number) => void;
   setPreferDiscountedPrice: (enabled: boolean) => void;
-  setGrsaiCreditTierId: (tierId: GrsaiCreditTierId) => void;
-  setUiRadiusPreset: (preset: UiRadiusPreset) => void;
-  setThemeTonePreset: (preset: ThemeTonePreset) => void;
+  setGrsaiCreditTierId: (tierId: string) => void;
+  setUiRadiusPreset: (preset: 'compact' | 'default' | 'large') => void;
+  setThemeTonePreset: (preset: 'neutral' | 'warm' | 'cool') => void;
   setAccentColor: (color: string) => void;
-  setCanvasEdgeRoutingMode: (mode: CanvasEdgeRoutingMode) => void;
+  setCanvasEdgeRoutingMode: (mode: 'spline' | 'orthogonal' | 'smartOrthogonal') => void;
   setAutoCheckAppUpdateOnLaunch: (enabled: boolean) => void;
   setEnableUpdateDialog: (enabled: boolean) => void;
 }
 
-const HEX_COLOR_PATTERN = /^#?[0-9a-fA-F]{6}$/;
-
-function normalizeHexColor(input: string): string {
-  const trimmed = input.trim();
-  if (!HEX_COLOR_PATTERN.test(trimmed)) {
-    return '#3B82F6';
-  }
-  return trimmed.startsWith('#') ? trimmed.toUpperCase() : `#${trimmed.toUpperCase()}`;
-}
-
-function normalizeApiKey(input: string): string {
-  return input.trim();
-}
-
-function normalizePriceDisplayCurrencyMode(
-  input: PriceDisplayCurrencyMode | string | null | undefined
-): PriceDisplayCurrencyMode {
-  return PRICE_DISPLAY_CURRENCY_MODES.includes(input as PriceDisplayCurrencyMode)
-    ? (input as PriceDisplayCurrencyMode)
-    : 'auto';
-}
-
-function normalizeUsdToCnyRate(input: number | string | null | undefined): number {
-  const numeric = typeof input === 'number' ? input : Number(input);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return 7.2;
-  }
-
-  return Math.min(100, Math.max(0.01, Math.round(numeric * 100) / 100));
-}
-
-function normalizeGrsaiCreditTierId(
-  input: GrsaiCreditTierId | string | null | undefined
-): GrsaiCreditTierId {
-  switch (input) {
-    case 'tier-10':
-    case 'tier-20':
-    case 'tier-49':
-    case 'tier-99':
-    case 'tier-499':
-    case 'tier-999':
-      return input;
-    default:
-      return DEFAULT_GRSAI_CREDIT_TIER_ID;
-  }
-}
-
-function normalizeGrsaiNanoBananaProModel(input: string | null | undefined): string {
-  const trimmed = (input ?? '').trim().toLowerCase();
-  if (trimmed === DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL || trimmed.startsWith('nano-banana-pro-')) {
-    return trimmed;
-  }
-  return DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL;
-}
-
-function normalizeCanvasEdgeRoutingMode(
-  input: CanvasEdgeRoutingMode | string | null | undefined
-): CanvasEdgeRoutingMode {
-  if (input === 'orthogonal' || input === 'smartOrthogonal' || input === 'spline') {
-    return input;
-  }
-  return 'spline';
-}
-
-function normalizeApiKeys(input: ProviderApiKeys | null | undefined): ProviderApiKeys {
-  if (!input) {
-    return {};
-  }
-
-  return Object.entries(input).reduce<ProviderApiKeys>((acc, [providerId, key]) => {
-    const normalizedProviderId = providerId.trim();
-    if (!normalizedProviderId) {
-      return acc;
-    }
-
-    acc[normalizedProviderId] = normalizeApiKey(key);
-    return acc;
-  }, {});
-}
-
-export function hasConfiguredApiKey(apiKeys: ProviderApiKeys): boolean {
-  return getConfiguredApiKeyCount(apiKeys) > 0;
-}
-
 export function getConfiguredApiKeyCount(
-  apiKeys: ProviderApiKeys,
-  providerIds?: readonly string[]
+  apiKeys: Record<string, string>,
+  providerIds: string[]
 ): number {
-  const keysToCount = providerIds
-    ? providerIds.map((providerId) => apiKeys[providerId] ?? '')
-    : Object.values(apiKeys);
-
-  return keysToCount.reduce((count, key) => {
-    return normalizeApiKey(key).length > 0 ? count + 1 : count;
-  }, 0);
+  return providerIds.filter(
+    (providerId) => typeof apiKeys[providerId] === 'string' && apiKeys[providerId].length > 0
+  ).length;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      isHydrated: false,
+      theme: 'dark',
+      themeTone: 'neutral',
+      edgeStyle: 'smoothstep',
+      language: 'zh',
+      showWelcome: true,
+      enablePreviewPanel: true,
+      showToolbarOnHover: false,
+      usePromptLibrary: false,
+      promptLanguage: 'auto',
+      promptMode: 'advanced',
+      alignmentEnabled: true,
       apiKeys: {},
-      grsaiNanoBananaProModel: DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL,
+      grsaiNanoBananaProModel: '',
       hideProviderGuidePopover: false,
       downloadPresetPaths: [],
       useUploadFilenameAsNodeTitle: true,
       storyboardGenKeepStyleConsistent: true,
-      storyboardGenDisableTextInImage: true,
+      storyboardGenDisableTextInImage: false,
       storyboardGenAutoInferEmptyFrame: true,
-      ignoreAtTagWhenCopyingAndGenerating: true,
+      ignoreAtTagWhenCopyingAndGenerating: false,
       enableStoryboardGenGridPreviewShortcut: false,
       showStoryboardGenAdvancedRatioControls: false,
-      showNodePrice: true,
+      showNodePrice: false,
       priceDisplayCurrencyMode: 'auto',
       usdToCnyRate: 7.2,
-      preferDiscountedPrice: false,
-      grsaiCreditTierId: DEFAULT_GRSAI_CREDIT_TIER_ID,
+      preferDiscountedPrice: true,
+      grsaiCreditTierId: 'tier-10',
       uiRadiusPreset: 'default',
       themeTonePreset: 'neutral',
       accentColor: '#3B82F6',
       canvasEdgeRoutingMode: 'spline',
       autoCheckAppUpdateOnLaunch: true,
       enableUpdateDialog: true,
-      setProviderApiKey: (providerId, key) =>
+      setTheme: (theme) => set({ theme }),
+      setThemeTone: (tone) => set({ themeTone: tone }),
+      setEdgeStyle: (style) => set({ edgeStyle: style }),
+      setLanguage: (language) => set({ language }),
+      setShowWelcome: (show) => set({ showWelcome: show }),
+      setEnablePreviewPanel: (enabled) => set({ enablePreviewPanel: enabled }),
+      setShowToolbarOnHover: (show) => set({ showToolbarOnHover: show }),
+      setUsePromptLibrary: (enabled) => set({ usePromptLibrary: enabled }),
+      setPromptLanguage: (language) => set({ promptLanguage: language }),
+      setPromptMode: (mode) => set({ promptMode: mode }),
+      setAlignmentEnabled: (enabled) => set({ alignmentEnabled: enabled }),
+      setProviderApiKey: (providerId, apiKey) =>
         set((state) => ({
-          apiKeys: {
-            ...state.apiKeys,
-            [providerId]: normalizeApiKey(key),
-          },
+          apiKeys: { ...state.apiKeys, [providerId]: apiKey },
         })),
-      setGrsaiNanoBananaProModel: (model) =>
-        set({
-          grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(model),
-        }),
+      setGrsaiNanoBananaProModel: (model) => set({ grsaiNanoBananaProModel: model }),
       setHideProviderGuidePopover: (hide) => set({ hideProviderGuidePopover: hide }),
-      setDownloadPresetPaths: (paths) => {
-        const uniquePaths = Array.from(
-          new Set(paths.map((path) => path.trim()).filter((path) => path.length > 0))
-        ).slice(0, 8);
-        set({ downloadPresetPaths: uniquePaths });
-      },
+      setDownloadPresetPaths: (paths) => set({ downloadPresetPaths: paths }),
       setUseUploadFilenameAsNodeTitle: (enabled) => set({ useUploadFilenameAsNodeTitle: enabled }),
-      setStoryboardGenKeepStyleConsistent: (enabled) =>
-        set({ storyboardGenKeepStyleConsistent: enabled }),
-      setStoryboardGenDisableTextInImage: (enabled) =>
-        set({ storyboardGenDisableTextInImage: enabled }),
-      setStoryboardGenAutoInferEmptyFrame: (enabled) =>
-        set({ storyboardGenAutoInferEmptyFrame: enabled }),
-      setIgnoreAtTagWhenCopyingAndGenerating: (enabled) =>
-        set({ ignoreAtTagWhenCopyingAndGenerating: enabled }),
-      setEnableStoryboardGenGridPreviewShortcut: (enabled) =>
-        set({ enableStoryboardGenGridPreviewShortcut: enabled }),
-      setShowStoryboardGenAdvancedRatioControls: (enabled) =>
-        set({ showStoryboardGenAdvancedRatioControls: enabled }),
+      setStoryboardGenKeepStyleConsistent: (enabled) => set({ storyboardGenKeepStyleConsistent: enabled }),
+      setStoryboardGenDisableTextInImage: (enabled) => set({ storyboardGenDisableTextInImage: enabled }),
+      setStoryboardGenAutoInferEmptyFrame: (enabled) => set({ storyboardGenAutoInferEmptyFrame: enabled }),
+      setIgnoreAtTagWhenCopyingAndGenerating: (enabled) => set({ ignoreAtTagWhenCopyingAndGenerating: enabled }),
+      setEnableStoryboardGenGridPreviewShortcut: (enabled) => set({ enableStoryboardGenGridPreviewShortcut: enabled }),
+      setShowStoryboardGenAdvancedRatioControls: (enabled) => set({ showStoryboardGenAdvancedRatioControls: enabled }),
       setShowNodePrice: (enabled) => set({ showNodePrice: enabled }),
-      setPriceDisplayCurrencyMode: (priceDisplayCurrencyMode) =>
-        set({
-          priceDisplayCurrencyMode:
-            normalizePriceDisplayCurrencyMode(priceDisplayCurrencyMode),
-        }),
-      setUsdToCnyRate: (usdToCnyRate) =>
-        set({ usdToCnyRate: normalizeUsdToCnyRate(usdToCnyRate) }),
+      setPriceDisplayCurrencyMode: (mode) => set({ priceDisplayCurrencyMode: mode }),
+      setUsdToCnyRate: (rate) => set({ usdToCnyRate: rate }),
       setPreferDiscountedPrice: (enabled) => set({ preferDiscountedPrice: enabled }),
-      setGrsaiCreditTierId: (grsaiCreditTierId) =>
-        set({ grsaiCreditTierId: normalizeGrsaiCreditTierId(grsaiCreditTierId) }),
-      setUiRadiusPreset: (uiRadiusPreset) => set({ uiRadiusPreset }),
-      setThemeTonePreset: (themeTonePreset) => set({ themeTonePreset }),
-      setAccentColor: (color) => set({ accentColor: normalizeHexColor(color) }),
-      setCanvasEdgeRoutingMode: (canvasEdgeRoutingMode) =>
-        set({ canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(canvasEdgeRoutingMode) }),
+      setGrsaiCreditTierId: (tierId) => set({ grsaiCreditTierId: tierId }),
+      setUiRadiusPreset: (preset) => set({ uiRadiusPreset: preset }),
+      setThemeTonePreset: (preset) => set({ themeTonePreset: preset }),
+      setAccentColor: (color) => set({ accentColor: color }),
+      setCanvasEdgeRoutingMode: (mode) => set({ canvasEdgeRoutingMode: mode }),
       setAutoCheckAppUpdateOnLaunch: (enabled) => set({ autoCheckAppUpdateOnLaunch: enabled }),
       setEnableUpdateDialog: (enabled) => set({ enableUpdateDialog: enabled }),
     }),
     {
       name: 'settings-storage',
-      version: 11,
-      onRehydrateStorage: () => {
-        return (_state, error) => {
-          if (error) {
-            console.error('failed to hydrate settings storage', error);
-          }
-          useSettingsStore.setState({ isHydrated: true });
-        };
-      },
+      version: 12,
       migrate: (persistedState: unknown) => {
         const state = (persistedState ?? {}) as {
-          apiKey?: string;
-          apiKeys?: ProviderApiKeys;
-          ignoreAtTagWhenCopyingAndGenerating?: boolean;
+          theme?: Theme;
+          themeTone?: ThemeTone;
+          edgeStyle?: EdgeStyle;
+          language?: Language;
+          showWelcome?: boolean;
+          enablePreviewPanel?: boolean;
+          showToolbarOnHover?: boolean;
+          usePromptLibrary?: boolean;
+          promptLanguage?: PromptLanguage;
+          promptMode?: PromptMode;
+          alignmentEnabled?: boolean;
+          apiKeys?: Record<string, string>;
           grsaiNanoBananaProModel?: string;
           hideProviderGuidePopover?: boolean;
-          canvasEdgeRoutingMode?: CanvasEdgeRoutingMode | string;
-          autoCheckAppUpdateOnLaunch?: boolean;
-          enableUpdateDialog?: boolean;
+          downloadPresetPaths?: string[];
+          useUploadFilenameAsNodeTitle?: boolean;
+          storyboardGenKeepStyleConsistent?: boolean;
+          storyboardGenDisableTextInImage?: boolean;
+          storyboardGenAutoInferEmptyFrame?: boolean;
+          ignoreAtTagWhenCopyingAndGenerating?: boolean;
           enableStoryboardGenGridPreviewShortcut?: boolean;
           showStoryboardGenAdvancedRatioControls?: boolean;
-          storyboardGenAutoInferEmptyFrame?: boolean;
           showNodePrice?: boolean;
-          priceDisplayCurrencyMode?: PriceDisplayCurrencyMode | string;
-          usdToCnyRate?: number | string;
+          priceDisplayCurrencyMode?: 'auto' | 'cny' | 'usd';
+          usdToCnyRate?: number;
           preferDiscountedPrice?: boolean;
-          grsaiCreditTierId?: GrsaiCreditTierId | string;
+          grsaiCreditTierId?: string;
+          uiRadiusPreset?: 'compact' | 'default' | 'large';
+          themeTonePreset?: 'neutral' | 'warm' | 'cool';
+          accentColor?: string;
+          canvasEdgeRoutingMode?: 'spline' | 'orthogonal' | 'smartOrthogonal';
+          autoCheckAppUpdateOnLaunch?: boolean;
+          enableUpdateDialog?: boolean;
         };
-
-        const migratedApiKeys = normalizeApiKeys(state.apiKeys);
-        const ignoreAtTagWhenCopyingAndGenerating =
-          state.ignoreAtTagWhenCopyingAndGenerating ?? true;
-        if (Object.keys(migratedApiKeys).length > 0) {
-          return {
-            ...(persistedState as object),
-            isHydrated: true,
-            apiKeys: migratedApiKeys,
-            ignoreAtTagWhenCopyingAndGenerating,
-            grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(
-              state.grsaiNanoBananaProModel
-            ),
-            hideProviderGuidePopover: state.hideProviderGuidePopover ?? false,
-            canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
-            autoCheckAppUpdateOnLaunch: state.autoCheckAppUpdateOnLaunch ?? true,
-            enableUpdateDialog: state.enableUpdateDialog ?? true,
-            enableStoryboardGenGridPreviewShortcut:
-              state.enableStoryboardGenGridPreviewShortcut ?? false,
-            showStoryboardGenAdvancedRatioControls:
-              state.showStoryboardGenAdvancedRatioControls ?? false,
-            storyboardGenAutoInferEmptyFrame: state.storyboardGenAutoInferEmptyFrame ?? true,
-            showNodePrice: state.showNodePrice ?? true,
-            priceDisplayCurrencyMode: normalizePriceDisplayCurrencyMode(
-              state.priceDisplayCurrencyMode
-            ),
-            usdToCnyRate: normalizeUsdToCnyRate(state.usdToCnyRate),
-            preferDiscountedPrice: state.preferDiscountedPrice ?? false,
-            grsaiCreditTierId: normalizeGrsaiCreditTierId(state.grsaiCreditTierId),
-          };
-        }
-
         return {
           ...(persistedState as object),
-          isHydrated: true,
-          apiKeys: state.apiKey ? { ppio: normalizeApiKey(state.apiKey) } : {},
-          ignoreAtTagWhenCopyingAndGenerating,
-          grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(
-            state.grsaiNanoBananaProModel
-          ),
+          theme: state.theme ?? 'dark',
+          themeTone: state.themeTone ?? 'neutral',
+          edgeStyle: state.edgeStyle ?? 'smoothstep',
+          language: state.language ?? 'zh',
+          showWelcome: state.showWelcome ?? true,
+          enablePreviewPanel: state.enablePreviewPanel ?? true,
+          showToolbarOnHover: state.showToolbarOnHover ?? false,
+          usePromptLibrary: state.usePromptLibrary ?? false,
+          promptLanguage: state.promptLanguage ?? 'auto',
+          promptMode: state.promptMode ?? 'advanced',
+          alignmentEnabled: state.alignmentEnabled ?? true,
+          apiKeys: state.apiKeys ?? {},
+          grsaiNanoBananaProModel: state.grsaiNanoBananaProModel ?? '',
           hideProviderGuidePopover: state.hideProviderGuidePopover ?? false,
-          canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
+          downloadPresetPaths: state.downloadPresetPaths ?? [],
+          useUploadFilenameAsNodeTitle: state.useUploadFilenameAsNodeTitle ?? true,
+          storyboardGenKeepStyleConsistent: state.storyboardGenKeepStyleConsistent ?? true,
+          storyboardGenDisableTextInImage: state.storyboardGenDisableTextInImage ?? false,
+          storyboardGenAutoInferEmptyFrame: state.storyboardGenAutoInferEmptyFrame ?? true,
+          ignoreAtTagWhenCopyingAndGenerating: state.ignoreAtTagWhenCopyingAndGenerating ?? false,
+          enableStoryboardGenGridPreviewShortcut: state.enableStoryboardGenGridPreviewShortcut ?? false,
+          showStoryboardGenAdvancedRatioControls: state.showStoryboardGenAdvancedRatioControls ?? false,
+          showNodePrice: state.showNodePrice ?? false,
+          priceDisplayCurrencyMode: state.priceDisplayCurrencyMode ?? 'auto',
+          usdToCnyRate: state.usdToCnyRate ?? 7.2,
+          preferDiscountedPrice: state.preferDiscountedPrice ?? true,
+          grsaiCreditTierId: state.grsaiCreditTierId ?? 'tier-10',
+          uiRadiusPreset: state.uiRadiusPreset ?? 'default',
+          themeTonePreset: state.themeTonePreset ?? 'neutral',
+          accentColor: state.accentColor ?? '#3B82F6',
+          canvasEdgeRoutingMode: state.canvasEdgeRoutingMode ?? 'spline',
           autoCheckAppUpdateOnLaunch: state.autoCheckAppUpdateOnLaunch ?? true,
           enableUpdateDialog: state.enableUpdateDialog ?? true,
-          enableStoryboardGenGridPreviewShortcut:
-            state.enableStoryboardGenGridPreviewShortcut ?? false,
-          showStoryboardGenAdvancedRatioControls:
-            state.showStoryboardGenAdvancedRatioControls ?? false,
-          storyboardGenAutoInferEmptyFrame: state.storyboardGenAutoInferEmptyFrame ?? true,
-          showNodePrice: state.showNodePrice ?? true,
-          priceDisplayCurrencyMode: normalizePriceDisplayCurrencyMode(
-            state.priceDisplayCurrencyMode
-          ),
-          usdToCnyRate: normalizeUsdToCnyRate(state.usdToCnyRate),
-          preferDiscountedPrice: state.preferDiscountedPrice ?? false,
-          grsaiCreditTierId: normalizeGrsaiCreditTierId(state.grsaiCreditTierId),
         };
       },
     }

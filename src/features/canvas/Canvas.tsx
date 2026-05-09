@@ -55,6 +55,9 @@ import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
 import { MissingApiKeyHint } from '@/features/settings/MissingApiKeyHint';
+import { useSnapAlignment } from './hooks/useSnapAlignment';
+import { AlignmentGuides } from './ui/AlignmentGuides';
+import type { AlignmentGuide } from './hooks/useSnapAlignment';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 
@@ -249,6 +252,25 @@ export function Canvas() {
   const [previewConnectionVisual, setPreviewConnectionVisual] =
     useState<PreviewConnectionVisual | null>(null);
 
+  // 对齐辅助线状态
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
+  const [alignmentGuidesVisible, setAlignmentGuidesVisible] = useState(false);
+  const [currentViewport, setCurrentViewport] = useState<{ x: number; y: number; zoom: number }>({
+    x: 0,
+    y: 0,
+    zoom: 1,
+  });
+
+  // 对齐吸附 hook
+  const { calculateSnapAlignment } = useSnapAlignment();
+
+  // 拖拽状态 ref（用于跟踪拖拽中的节点和偏移）
+  const dragStateRef = useRef<{
+    nodeId: string;
+    startPosition: { x: number; y: number };
+    selectedNodeIds: string[];
+  } | null>(null);
+
   const isRestoringCanvasRef = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedSnapshotRef = useRef<ClipboardSnapshot | null>(null);
@@ -299,6 +321,7 @@ export function Canvas() {
   const closeImageViewer = useCanvasStore((state) => state.closeImageViewer);
   const navigateImageViewer = useCanvasStore((state) => state.navigateImageViewer);
   const apiKeys = useSettingsStore((state) => state.apiKeys);
+  const alignmentEnabled = useSettingsStore((state) => state.alignmentEnabled);
   const providerIds = useMemo(() => listModelProviders().map((provider) => provider.id), []);
   const configuredApiKeyCount = useSettingsStore((state) =>
     getConfiguredApiKeyCount(state.apiKeys, providerIds)
@@ -664,6 +687,7 @@ export function Canvas() {
   const handleMove = useCallback(
     (_event: unknown, viewport: Viewport) => {
       setViewportState(viewport);
+      setCurrentViewport({ x: viewport.x, y: viewport.y, zoom: viewport.zoom });
     },
     [setViewportState]
   );
@@ -1237,14 +1261,22 @@ export function Canvas() {
 
   const handleNodeDragStart = useCallback(
     (event: ReactMouseEvent, node: CanvasNode) => {
+      // 初始化拖拽状态，用于对齐计算
+      const nodeSelectedIds = selectedNodeIds.includes(node.id)
+        ? selectedNodeIds
+        : [node.id];
+      dragStateRef.current = {
+        nodeId: node.id,
+        startPosition: { x: node.position.x, y: node.position.y },
+        selectedNodeIds: nodeSelectedIds,
+      };
+
       if (!event.altKey) {
         altDragCopyRef.current = null;
         return;
       }
 
-      const sourceNodeIds = selectedNodeIds.includes(node.id)
-        ? selectedNodeIds
-        : [node.id];
+      const sourceNodeIds = nodeSelectedIds;
       if (sourceNodeIds.length === 0) {
         altDragCopyRef.current = null;
         return;
@@ -1314,6 +1346,56 @@ export function Canvas() {
   const handleNodeDrag = useCallback(
     (_event: ReactMouseEvent, node: CanvasNode) => {
       const altCopyState = altDragCopyRef.current;
+
+      // 非 Alt 拖拽且对齐功能启用时启用对齐辅助线
+      if (!altCopyState && dragStateRef.current && alignmentEnabled) {
+        const dragState = dragStateRef.current;
+
+        // 计算对齐吸附 — node.position 已经是 ReactFlow 更新后的当前位置
+        const snapResult = calculateSnapAlignment(
+          node.id,
+          { x: node.position.x, y: node.position.y },
+          nodes,
+          dragState.selectedNodeIds
+        );
+
+        // 更新辅助线
+        setAlignmentGuides(snapResult.guides);
+        setAlignmentGuidesVisible(snapResult.guides.length > 0);
+
+        // 如果有吸附，同步应用吸附偏移
+        if (snapResult.snapOffset.x !== 0 || snapResult.snapOffset.y !== 0) {
+          const selectedIdSet = new Set(dragState.selectedNodeIds);
+          const changes = nodes
+            .filter((n) => selectedIdSet.has(n.id))
+            .map((n) => {
+              // 每个选中节点都需要加上同样的吸附偏移
+              const isDraggedNode = n.id === node.id;
+              const basePosition = isDraggedNode ? node.position : n.position;
+              return {
+                id: n.id,
+                type: 'position' as const,
+                position: {
+                  x: basePosition.x + snapResult.snapOffset.x,
+                  y: basePosition.y + snapResult.snapOffset.y,
+                },
+                dragging: true,
+              };
+            })
+            .filter((change): change is {
+              id: string;
+              type: 'position';
+              position: { x: number; y: number };
+              dragging: boolean;
+            } => Boolean(change));
+
+          if (changes.length > 0) {
+            applyNodesChange(changes);
+          }
+        }
+        return;
+      }
+
       if (!altCopyState) {
         return;
       }
@@ -1372,11 +1454,16 @@ export function Canvas() {
         applyNodesChange(allChanges);
       }
     },
-    [applyNodesChange]
+    [applyNodesChange, alignmentEnabled, nodes]
   );
 
   const handleNodeDragStop = useCallback(
     (_event: ReactMouseEvent, node: CanvasNode) => {
+      // 清除对齐辅助线
+      setAlignmentGuides([]);
+      setAlignmentGuidesVisible(false);
+      dragStateRef.current = null;
+
       const altCopyState = altDragCopyRef.current;
       if (!altCopyState) {
         return;
@@ -1628,6 +1715,12 @@ export function Canvas() {
         />
 
         <SelectedNodeOverlay />
+
+        <AlignmentGuides
+          guides={alignmentGuides}
+          viewport={currentViewport}
+          visible={alignmentGuidesVisible}
+        />
       </ReactFlow>
 
       {nodes.length === 0 && emptyHint}

@@ -215,6 +215,8 @@
     "apiKey": "API Key",
     "model": "Model",
     "enterApiKey": "Enter API Key",
+    "alignmentEnabled": "Enable alignment guides and snapping",
+    "alignmentEnabledDesc": "Show alignment guides and auto-snap to nearby node edges when dragging nodes",
     "nanoBananaProModel": "Nano Banana Pro Model",
     "nanoBananaProModelDesc": "Switch the Nano Banana Pro endpoint for this provider. If one endpoint fails, try another one. See the <modelListLink>model list</modelListLink> for details.",
     "addProvider": "Add Provider",
@@ -248,7 +250,7 @@
     "ignoreAtTagWhenCopyingAndGeneratingDesc": "When enabled, copied text and embedded storyboard metadata remove tags like \"@图1\"; generation requests only remove \"@\" and keep \"图1\".",
     "useUploadFilenameAsNodeTitle": "Use uploaded filename as node title",
     "useUploadFilenameAsNodeTitleDesc": "When enabled, newly uploaded images use the file name as the node title by default (still editable via double-click).",
-    "downloadPathPlaceholder": "Input folder path, e.g. /Users/name/Pictures/Storyboard or D:\\\\Images\\\\Storyboard",
+    "downloadPathPlaceholder": "Input folder path, e.g. /Users/name/Pictures/Storyboard or D:\\Images\\Storyboard",
     "addPath": "Add Path",
     "chooseFolder": "Choose Folder",
     "noDownloadPresetPaths": "No preset path yet",
@@ -318,4 +320,3 @@
     "copyReport": "Copy error report"
   }
 }
-

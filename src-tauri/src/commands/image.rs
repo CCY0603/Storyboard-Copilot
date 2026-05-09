@@ -190,7 +190,7 @@ fn compute_column_layout(
             let mut x_offsets = Vec::with_capacity(cols as usize);
             
             let mut cursor_x = 0u32;
-            for (i, &offset) in offsets.iter().enumerate() {
+            for (_i, &offset) in offsets.iter().enumerate() {
                 // 确保偏移在有效范围内
                 let safe_offset = offset.min(width.saturating_sub(line_thickness));
                 let col_width = safe_offset.saturating_sub(cursor_x);
@@ -255,7 +255,7 @@ fn compute_row_layout(
             let mut y_offsets = Vec::with_capacity(rows as usize);
             
             let mut cursor_y = 0u32;
-            for (i, &offset) in offsets.iter().enumerate() {
+            for (_i, &offset) in offsets.iter().enumerate() {
                 // 确保偏移在有效范围内
                 let safe_offset = offset.min(height.saturating_sub(line_thickness));
                 let row_height = safe_offset.saturating_sub(cursor_y);

@@ -130,6 +130,8 @@ export function SettingsDialog({
     setAccentColor,
     setCanvasEdgeRoutingMode,
     setAutoCheckAppUpdateOnLaunch,
+    alignmentEnabled,
+    setAlignmentEnabled,
     setEnableUpdateDialog,
   } = useSettingsStore();
   const providers = useMemo(() => {
@@ -183,6 +185,7 @@ export function SettingsDialog({
     autoCheckAppUpdateOnLaunch
   );
   const [localEnableUpdateDialog, setLocalEnableUpdateDialog] = useState(enableUpdateDialog);
+  const [localAlignmentEnabled, setLocalAlignmentEnabled] = useState(alignmentEnabled);
   const [checkUpdateStatus, setCheckUpdateStatus] = useState<'' | 'checking' | 'has-update' | 'up-to-date' | 'failed'>('');
   const [revealedApiKeys, setRevealedApiKeys] = useState<Record<string, boolean>>({});
   const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
@@ -232,6 +235,7 @@ export function SettingsDialog({
     setLocalCanvasEdgeRoutingMode(canvasEdgeRoutingMode);
     setLocalAutoCheckAppUpdateOnLaunch(autoCheckAppUpdateOnLaunch);
     setLocalEnableUpdateDialog(enableUpdateDialog);
+    setLocalAlignmentEnabled(alignmentEnabled);
     setCheckUpdateStatus('');
     setRevealedApiKeys({});
     setLocalDownloadPathInput('');
@@ -271,6 +275,7 @@ export function SettingsDialog({
     setCanvasEdgeRoutingMode(localCanvasEdgeRoutingMode);
     setAutoCheckAppUpdateOnLaunch(localAutoCheckAppUpdateOnLaunch);
     setEnableUpdateDialog(localEnableUpdateDialog);
+    setAlignmentEnabled(localAlignmentEnabled);
     onClose();
   }, [
     localApiKeys,
@@ -293,6 +298,7 @@ export function SettingsDialog({
     localAccentColor,
     localCanvasEdgeRoutingMode,
     localAutoCheckAppUpdateOnLaunch,
+    localAlignmentEnabled,
     localEnableUpdateDialog,
     providers,
     setProviderApiKey,
@@ -315,6 +321,7 @@ export function SettingsDialog({
     setAccentColor,
     setCanvasEdgeRoutingMode,
     setAutoCheckAppUpdateOnLaunch,
+    setAlignmentEnabled,
     setEnableUpdateDialog,
     onClose,
   ]);
@@ -503,6 +510,12 @@ export function SettingsDialog({
                 </div>
 
                 <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
+                     <SettingsCheckboxCard
+                    checked={localAlignmentEnabled}
+                    onCheckedChange={setLocalAlignmentEnabled}
+                    title={t('settings.alignmentEnabled')}
+                    description={t('settings.alignmentEnabledDesc')}
+                  />
                   {providers.map((provider) => {
                     const displayName = i18n.language.startsWith('zh') ? provider.label : provider.name;
                     const isRevealed = Boolean(revealedApiKeys[provider.id]);
@@ -634,6 +647,13 @@ export function SettingsDialog({
                 </div>
 
                 <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
+                  <SettingsCheckboxCard
+                    checked={localAlignmentEnabled}
+                    onCheckedChange={setLocalAlignmentEnabled}
+                    title={t('settings.alignmentEnabled')}
+                    description={t('settings.alignmentEnabledDesc')}
+                  />
+
                   <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
                     <h3 className="text-sm font-medium text-text-dark">
                       {t('settings.radiusPreset')}

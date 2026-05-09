@@ -208,6 +208,7 @@ fn handle_response_body(raw: &str, endpoint_label: &str) -> Result<String, AIErr
 }
 
 /// Encode reference image to URL or data URI for video API
+#[allow(dead_code)]
 fn encode_reference_image_url(source: &str) -> Option<String> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
@@ -536,7 +537,7 @@ impl Zi32Provider {
             Ok(task_id)
         } else {
             // Custom format: POST /v1/video/create
-            let mut body = json!({
+            let body = json!({
                 "model": raw_model,
                 "prompt": request.prompt,
                 "aspect_ratio": request.aspect_ratio,

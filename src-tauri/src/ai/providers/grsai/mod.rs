@@ -286,6 +286,7 @@ impl GrsaiProvider {
             .map(|url| url.to_string())
     }
 
+    #[allow(dead_code)]
     fn resolve_resolution_from_size(size: &str) -> String {
         let lower = size.to_lowercase();
         if lower.contains("4k") {
