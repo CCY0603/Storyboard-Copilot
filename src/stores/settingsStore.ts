@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { GrsaiCreditTierId } from '@/features/canvas/pricing/types';
 
 export type Theme = 'dark' | 'light' | 'system';
 export type ThemeTone = 'neutral' | 'warm' | 'cool';
@@ -35,7 +36,7 @@ export interface SettingsState {
   priceDisplayCurrencyMode: 'auto' | 'cny' | 'usd';
   usdToCnyRate: number;
   preferDiscountedPrice: boolean;
-  grsaiCreditTierId: string;
+  grsaiCreditTierId: GrsaiCreditTierId;
   uiRadiusPreset: 'compact' | 'default' | 'large';
   themeTonePreset: 'neutral' | 'warm' | 'cool';
   accentColor: string;
@@ -151,7 +152,7 @@ export const useSettingsStore = create<SettingsState>()(
       setPriceDisplayCurrencyMode: (mode) => set({ priceDisplayCurrencyMode: mode }),
       setUsdToCnyRate: (rate) => set({ usdToCnyRate: rate }),
       setPreferDiscountedPrice: (enabled) => set({ preferDiscountedPrice: enabled }),
-      setGrsaiCreditTierId: (tierId) => set({ grsaiCreditTierId: tierId }),
+      setGrsaiCreditTierId: (tierId) => set({ grsaiCreditTierId: tierId as GrsaiCreditTierId }),
       setUiRadiusPreset: (preset) => set({ uiRadiusPreset: preset }),
       setThemeTonePreset: (preset) => set({ themeTonePreset: preset }),
       setAccentColor: (color) => set({ accentColor: color }),

@@ -990,6 +990,112 @@ export function Canvas() {
     selectedUploadNodeId,
   ]);
 
+  useEffect(() => {
+    const wrapperElement = wrapperRef.current;
+    if (!wrapperElement) {
+      return;
+    }
+
+    const handleDragOver = (event: DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const handleDrop = async (event: DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const files = Array.from(event.dataTransfer?.files || []);
+      const imageFiles = files.filter(file => file.type.startsWith('image/'));
+
+      if (imageFiles.length === 0) {
+        return;
+      }
+
+      const dropClientX = event.clientX;
+      const dropClientY = event.clientY;
+      const dropFlowPosition = reactFlowInstance.screenToFlowPosition({
+        x: dropClientX,
+        y: dropClientY,
+      });
+
+      const { prepareNodeImageFromFile } = await import('@/features/canvas/application/imageData');
+      const { useUploadFilenameAsNodeTitle } = useSettingsStore.getState();
+
+      const NODE_WIDTH = 220;
+      const NODE_HEIGHT = 220;
+      const VERTICAL_GAP = 40;
+      const HORIZONTAL_GAP = 100;
+
+      const createdNodeIds: string[] = [];
+
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+
+        try {
+          console.log(`[batch-upload] Processing file ${i + 1}/${imageFiles.length}: ${file.name}, size: ${file.size} bytes, type: ${file.type}`);
+          
+          const prepared = await prepareNodeImageFromFile(file);
+          
+          if (!prepared.imageUrl || !prepared.previewImageUrl) {
+            throw new Error(`图片处理返回数据不完整: imageUrl=${!!prepared.imageUrl}, previewImageUrl=${!!prepared.previewImageUrl}`);
+          }
+
+          console.log(`[batch-upload] File ${file.name} processed successfully: imageUrl=${prepared.imageUrl}, previewImageUrl=${prepared.previewImageUrl}, aspectRatio=${prepared.aspectRatio}`);
+
+          const uploadNodePosition = {
+            x: dropFlowPosition.x,
+            y: dropFlowPosition.y + i * (NODE_HEIGHT + VERTICAL_GAP),
+          };
+
+          const uploadNodeId = addNode(CANVAS_NODE_TYPES.upload, uploadNodePosition, {
+            displayName: useUploadFilenameAsNodeTitle ? file.name : undefined,
+            imageUrl: prepared.imageUrl,
+            previewImageUrl: prepared.previewImageUrl,
+            aspectRatio: prepared.aspectRatio || '1:1',
+            sourceFileName: file.name,
+          });
+
+          createdNodeIds.push(uploadNodeId);
+
+          const imageEditNodePosition = {
+            x: dropFlowPosition.x + NODE_WIDTH + HORIZONTAL_GAP,
+            y: dropFlowPosition.y + i * (NODE_HEIGHT + VERTICAL_GAP),
+          };
+
+          const imageEditNodeId = addNode(CANVAS_NODE_TYPES.imageEdit, imageEditNodePosition, {
+            displayName: `AI生图 - ${file.name}`,
+          });
+
+          connectNodes({
+            source: uploadNodeId,
+            target: imageEditNodeId,
+            sourceHandle: 'source',
+            targetHandle: 'target',
+          });
+
+          createdNodeIds.push(imageEditNodeId);
+        } catch (error) {
+          console.error(`[batch-upload] Failed to process image file: ${file.name}`, error);
+          alert(`图片 "${file.name}" 处理失败，请重试或选择其他图片。\n错误: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      if (createdNodeIds.length > 0) {
+        setSelectedNode(createdNodeIds[0]);
+        scheduleCanvasPersist(0);
+      }
+    };
+
+    wrapperElement.addEventListener('dragover', handleDragOver);
+    wrapperElement.addEventListener('drop', handleDrop);
+
+    return () => {
+      wrapperElement.removeEventListener('dragover', handleDragOver);
+      wrapperElement.removeEventListener('drop', handleDrop);
+    };
+  }, [addNode, updateNodeData, setSelectedNode, scheduleCanvasPersist, reactFlowInstance]);
+
   const openNodeMenuAtClientPosition = useCallback((clientX: number, clientY: number) => {
     const containerRect = wrapperRef.current?.getBoundingClientRect();
     if (!containerRect) {

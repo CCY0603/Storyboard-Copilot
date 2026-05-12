@@ -252,18 +252,6 @@ export async function prepareNodeImageFromFile(
   maxPreviewDimension = DEFAULT_PREVIEW_MAX_DIMENSION
 ): Promise<PreparedNodeImage> {
   const started = performance.now();
-  const tauriFilePath = (file as File & { path?: string }).path;
-  const normalizedPath = typeof tauriFilePath === 'string' ? tauriFilePath.trim() : '';
-  const canUseLocalPath =
-    normalizedPath.length > 0
-    && (isLikelyLocalImagePath(normalizedPath) || normalizedPath.toLowerCase().startsWith('file://'));
-  if (canUseLocalPath) {
-    const prepared = await prepareNodeImage(normalizedPath, maxPreviewDimension);
-    console.info(
-      `[upload-perf][imageData] prepareNodeImageFromFile path-mode name="${file.name}" size=${file.size}B elapsed=${Math.round(performance.now() - started)}ms`
-    );
-    return prepared;
-  }
 
   if (isTauri()) {
     const safeMaxDimension = Math.max(64, Math.floor(maxPreviewDimension));
@@ -274,20 +262,57 @@ export async function prepareNodeImageFromFile(
     const tauriStarted = performance.now();
     const prepared = await prepareNodeImageBinary(bytes, extension, safeMaxDimension);
     const tauriElapsed = Math.round(performance.now() - tauriStarted);
+    
+    if (!prepared.imagePath || !prepared.previewImagePath) {
+      throw createImagePipelineError(
+        '图片处理返回数据不完整',
+        `imagePath=${!!prepared.imagePath}, previewImagePath=${!!prepared.previewImagePath}`
+      );
+    }
+    
     console.info(
       `[upload-perf][imageData] prepareNodeImageFromFile binary-mode name="${file.name}" size=${file.size}B readArrayBuffer=${readElapsed}ms tauriPrepare=${tauriElapsed}ms total=${Math.round(performance.now() - started)}ms`
     );
     return {
       imageUrl: prepared.imagePath,
       previewImageUrl: prepared.previewImagePath,
-      aspectRatio: prepared.aspectRatio,
+      aspectRatio: prepared.aspectRatio || '1:1',
     };
+  }
+
+  const tauriFilePath = (file as File & { path?: string }).path;
+  const normalizedPath = typeof tauriFilePath === 'string' ? tauriFilePath.trim() : '';
+  const canUseLocalPath =
+    normalizedPath.length > 0
+    && (isLikelyLocalImagePath(normalizedPath) || normalizedPath.toLowerCase().startsWith('file://'));
+  if (canUseLocalPath) {
+    const prepared = await prepareNodeImage(normalizedPath, maxPreviewDimension);
+    
+    if (!prepared.imageUrl || !prepared.previewImageUrl) {
+      throw createImagePipelineError(
+        '图片处理返回数据不完整',
+        `imageUrl=${!!prepared.imageUrl}, previewImageUrl=${!!prepared.previewImageUrl}`
+      );
+    }
+    
+    console.info(
+      `[upload-perf][imageData] prepareNodeImageFromFile path-mode name="${file.name}" size=${file.size}B elapsed=${Math.round(performance.now() - started)}ms`
+    );
+    return prepared;
   }
 
   const dataUrlStarted = performance.now();
   const source = await readFileAsDataUrl(file);
   const dataUrlElapsed = Math.round(performance.now() - dataUrlStarted);
   const prepared = await prepareNodeImage(source, maxPreviewDimension);
+  
+  if (!prepared.imageUrl || !prepared.previewImageUrl) {
+    throw createImagePipelineError(
+      '图片处理返回数据不完整',
+      `imageUrl=${!!prepared.imageUrl}, previewImageUrl=${!!prepared.previewImageUrl}`
+    );
+  }
+  
   console.info(
     `[upload-perf][imageData] prepareNodeImageFromFile dataurl-fallback name="${file.name}" size=${file.size}B readDataUrl=${dataUrlElapsed}ms total=${Math.round(performance.now() - started)}ms`
   );

@@ -30,7 +30,6 @@ import {
 } from '@/features/canvas/application/imageData';
 import {
   buildGenerationErrorReport,
-  CURRENT_RUNTIME_SESSION_ID,
   getRuntimeDiagnostics,
   type GenerationDebugContext,
 } from '@/features/canvas/application/generationErrorReport';
@@ -39,7 +38,6 @@ import {
   getVideoModel,
   listVideoModels,
   listModelProviders,
-  isVideoModel,
 } from '@/features/canvas/models';
 import {
   NODE_CONTROL_CHIP_CLASS,
