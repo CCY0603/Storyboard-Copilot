@@ -54,6 +54,7 @@ export interface ImageModelDefinition {
   extraParamsSchema?: ExtraParamDefinition[];
   defaultExtraParams?: Record<string, unknown>;
   pricing?: ModelPricingDefinition;
+  maxReferenceImages?: number;
   resolveRequest: (context: { referenceImageCount: number }) => {
     requestModel: string;
     modeLabel: string;

@@ -1,7 +1,7 @@
 import type { ImageModelDefinition } from '../../types';
 import { createFixedResolutionPricing } from '@/features/canvas/pricing';
 
-export const ZI32_GEMINI_25_FLASH_IMAGE_MODEL_ID = 'zi32/gemini-2.5-flash-image';
+export const ZI32_GEMINI_25_FLASH_IMAGE_MODEL_ID = 'zi32/gemini-2.5-flash-image-preview';
 
 const GEMINI_25_FLASH_ASPECT_RATIOS = [
   '1:1',
@@ -30,8 +30,9 @@ export const imageModel: ImageModelDefinition = {
     currency: 'USD',
     standardRates: { '1K': 0.015, '2K': 0.03 },
   }),
-  resolveRequest: ({ referenceImageCount: _referenceImageCount }) => ({
+  maxReferenceImages: 16,
+  resolveRequest: ({ referenceImageCount }) => ({
     requestModel: ZI32_GEMINI_25_FLASH_IMAGE_MODEL_ID,
-    modeLabel: '生成模式',
+    modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',
   }),
 };

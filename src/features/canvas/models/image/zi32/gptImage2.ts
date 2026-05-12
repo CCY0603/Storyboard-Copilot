@@ -29,6 +29,7 @@ export const imageModel: ImageModelDefinition = {
     currency: 'USD',
     standardRates: { '1K': 0.08 },
   }),
+  maxReferenceImages: 16,
   resolveRequest: ({ referenceImageCount }) => ({
     requestModel: ZI32_GPT_IMAGE_2_MODEL_ID,
     modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',

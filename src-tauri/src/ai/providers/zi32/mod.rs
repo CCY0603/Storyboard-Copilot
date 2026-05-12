@@ -29,9 +29,9 @@ const SUPPORTED_MODELS: [&str; 7] = [
     "zi32/gpt-image-1.5",
     "zi32/gpt-image-1",
     "zi32/gpt-image-1-mini",
-    "zi32/gemini-3.1-flash-image",
-    "zi32/gemini-3-pro-image",
-    "zi32/gemini-2.5-flash-image",
+    "zi32/gemini-3.1-flash-image-preview",
+    "zi32/gemini-3-pro-image-preview",
+    "zi32/gemini-2.5-flash-image-preview",
 ];
 
 /// Video model identifiers supported by 32zi
@@ -366,23 +366,23 @@ impl Zi32Provider {
         }
 
         if let Some(ref_images) = &request.reference_images {
-            if let Some(source) = ref_images.first() {
+            for (index, source) in ref_images.iter().enumerate() {
                 match source_to_bytes(source) {
                     Ok(bytes) => {
                         let compressed = compress_image_for_multipart(&bytes).unwrap_or(bytes);
                         let compressed_len = compressed.len();
                         let part = Part::bytes(compressed)
-                            .file_name("image.png")
+                            .file_name(format!("reference_{}.png", index))
                             .mime_str("image/png")
                             .unwrap();
-                        form = form.part("image", part);
+                        form = form.part("image[]", part);
                         info!(
-                            "[32zi] Reference image compressed, size: {} bytes",
-                            compressed_len
+                            "[32zi] Reference image {} compressed, size: {} bytes",
+                            index, compressed_len
                         );
                     }
                     Err(e) => {
-                        info!("[32zi] Failed to read reference image: {}", e);
+                        info!("[32zi] Failed to read reference image {}: {}", index, e);
                     }
                 }
             }
@@ -409,6 +409,128 @@ impl Zi32Provider {
 
         let raw = response.text().await.unwrap_or_default();
         handle_response_body(&raw, "edits")
+    }
+
+    async fn generate_gemini_image(
+        &self,
+        request: &GenerateRequest,
+        model: String,
+        api_key: &str,
+    ) -> Result<String, AIError> {
+        let endpoint = format!("https://ai.32zi.com/v1beta/models/{}:generateContent?key={}", model, api_key);
+        
+        let mut parts: Vec<Value> = Vec::new();
+        
+        parts.push(json!({
+            "text": request.prompt
+        }));
+        
+        if let Some(ref_images) = &request.reference_images {
+            for source in ref_images {
+                match source_to_bytes(source) {
+                    Ok(bytes) => {
+                        let compressed = compress_image_for_multipart(&bytes).unwrap_or_else(|_| bytes.clone());
+                        let compressed_base64 = STANDARD.encode(&compressed);
+                        info!(
+                            "[32zi Gemini] Reference image compressed: {} -> {} bytes",
+                            bytes.len(),
+                            compressed.len()
+                        );
+                        parts.push(json!({
+                            "inlineData": {
+                                "mimeType": "image/png",
+                                "data": compressed_base64
+                            }
+                        }));
+                    }
+                    Err(e) => {
+                        info!("[32zi Gemini] Failed to read reference image: {}", e);
+                    }
+                }
+            }
+        }
+        
+        let mut image_config = json!({
+            "aspectRatio": request.aspect_ratio
+        });
+        
+        let supports_image_size = model.contains("gemini-3.1-flash-image-preview") || model.contains("gemini-3-pro-image-preview");
+        if supports_image_size {
+            image_config["imageSize"] = json!(request.size);
+        }
+        
+        let body = json!({
+            "contents": [{
+                "role": "user",
+                "parts": parts
+            }],
+            "generationConfig": {
+                "responseModalities": ["IMAGE"],
+                "imageConfig": image_config
+            }
+        });
+
+        info!("[32zi Gemini API] POST {} (gemini-image, json)", endpoint);
+
+        let response = self
+            .client
+            .post(&endpoint)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(AIError::Provider(format!(
+                "32zi Gemini request failed {}: {}",
+                status, error_text
+            )));
+        }
+
+        let raw = response.text().await.unwrap_or_default();
+        Self::handle_gemini_response(&raw)
+    }
+
+    fn handle_gemini_response(raw: &str) -> Result<String, AIError> {
+        let body: Value = serde_json::from_str(raw).map_err(|err| {
+            AIError::Provider(format!(
+                "32zi Gemini invalid JSON response: {}; raw={}",
+                err, raw
+            ))
+        })?;
+
+        if let Some(error) = body.get("error") {
+            let msg = error
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error");
+            return Err(AIError::Provider(format!("32zi Gemini API error: {}", msg)));
+        }
+
+        if let Some(candidates) = body.get("candidates").and_then(|c| c.as_array()) {
+            if let Some(first_candidate) = candidates.first() {
+                if let Some(content) = first_candidate.get("content") {
+                    if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                        for part in parts {
+                            if let Some(inline_data) = part.get("inlineData") {
+                                if let Some(data) = inline_data.get("data").and_then(|d| d.as_str()) {
+                                    if !data.is_empty() {
+                                        return Ok(format!("data:image/png;base64,{}", data));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(AIError::Provider(format!(
+            "32zi Gemini no image URL in response: {}",
+            raw
+        )))
     }
 
     /// Submit a video generation task
@@ -745,18 +867,21 @@ impl AIProvider for Zi32Provider {
                 .clone()
                 .ok_or_else(|| AIError::InvalidRequest("API key not set".to_string()))?;
 
-            let size_param = Self::resolve_size_param(&request.size, &request.aspect_ratio);
+            let is_gemini_model = raw_model.contains("gemini");
             let has_references = request
                 .reference_images
                 .as_ref()
                 .map(|imgs| !imgs.is_empty())
                 .unwrap_or(false);
 
-            let result = if has_references {
-                self.generate_image_edit(&request, raw_model, size_param, &api_key)
+            let result = if is_gemini_model {
+                self.generate_gemini_image(&request, raw_model, &api_key)
+                    .await?
+            } else if has_references {
+                self.generate_image_edit(&request, raw_model, "1024x1024".to_string(), &api_key)
                     .await?
             } else {
-                self.generate_text_to_image(&request, raw_model, size_param, &api_key)
+                self.generate_text_to_image(&request, raw_model, "1024x1024".to_string(), &api_key)
                     .await?
             };
             Ok(ProviderTaskSubmission::Succeeded(result))
@@ -813,7 +938,7 @@ impl AIProvider for Zi32Provider {
                 .clone()
                 .ok_or_else(|| AIError::InvalidRequest("API key not set".to_string()))?;
 
-            let size_param = Self::resolve_size_param(&request.size, &request.aspect_ratio);
+            let is_gemini_model = raw_model.contains("gemini");
             let has_references = request
                 .reference_images
                 .as_ref()
@@ -821,10 +946,10 @@ impl AIProvider for Zi32Provider {
                 .unwrap_or(false);
 
             info!(
-                "[32zi Request] model: {}, size: {}, aspect_ratio: {}, refs: {}",
+                "[32zi Request] model: {}, is_gemini: {}, has_refs: {}, refs: {}",
                 raw_model,
-                request.size,
-                request.aspect_ratio,
+                is_gemini_model,
+                has_references,
                 request
                     .reference_images
                     .as_ref()
@@ -832,11 +957,14 @@ impl AIProvider for Zi32Provider {
                     .unwrap_or(0)
             );
 
-            if has_references {
-                self.generate_image_edit(&request, raw_model, size_param, &api_key)
+            if is_gemini_model {
+                self.generate_gemini_image(&request, raw_model, &api_key)
+                    .await
+            } else if has_references {
+                self.generate_image_edit(&request, raw_model, "1024x1024".to_string(), &api_key)
                     .await
             } else {
-                self.generate_text_to_image(&request, raw_model, size_param, &api_key)
+                self.generate_text_to_image(&request, raw_model, "1024x1024".to_string(), &api_key)
                     .await
             }
         }
