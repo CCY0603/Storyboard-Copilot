@@ -390,7 +390,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
             {isCopyErrorSuccess ? t('nodeToolbar.copied') : t('nodeToolbar.copyErrorReport')}
           </UiChipButton>
         )}
-        {!isImageEdit && canHandleImage && (
+        {canHandleImage && (
           <UiChipButton
             key="image-download"
             className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}

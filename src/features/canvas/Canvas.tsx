@@ -34,6 +34,7 @@ import {
   type CanvasNode,
   type CanvasNodeType,
   DEFAULT_NODE_WIDTH,
+  type GenerationStoryboardMetadata,
 } from '@/features/canvas/domain/canvasNodes';
 import { prepareNodeImage } from '@/features/canvas/application/imageData';
 import {
@@ -100,12 +101,6 @@ interface DuplicateResult {
 
 const ALT_DRAG_COPY_Z_INDEX = 2000;
 const GENERATION_JOB_POLL_INTERVAL_MS = 1400;
-
-interface GenerationStoryboardMetadata {
-  gridRows: number;
-  gridCols: number;
-  frameNotes: string[];
-}
 
 function getNodeSize(node: CanvasNode): { width: number; height: number } {
   const styleWidth = typeof node.style?.width === 'number' ? node.style.width : null;
@@ -491,46 +486,78 @@ export function Canvas() {
             }
 
             if (status.status === 'succeeded' && typeof status.result === 'string' && status.result.trim()) {
-              const prepared = await prepareNodeImage(status.result);
-              const storyboardMetadataRaw = currentData.generationStoryboardMetadata as GenerationStoryboardMetadata | undefined;
-              const hasStoryboardMetadata = Boolean(
-                storyboardMetadataRaw
-                && Number.isFinite(storyboardMetadataRaw.gridRows)
-                && Number.isFinite(storyboardMetadataRaw.gridCols)
-                && Array.isArray(storyboardMetadataRaw.frameNotes)
-              );
-              let imageWithMetadata = prepared.imageUrl;
-              if (hasStoryboardMetadata && storyboardMetadataRaw) {
-                imageWithMetadata = await embedStoryboardImageMetadata(prepared.imageUrl, {
-                  gridRows: Math.max(1, Math.round(storyboardMetadataRaw.gridRows)),
-                  gridCols: Math.max(1, Math.round(storyboardMetadataRaw.gridCols)),
-                  frameNotes: storyboardMetadataRaw.frameNotes,
-                }).catch((error) => {
-                  console.warn('[GenerationJob] embed storyboard metadata failed', {
-                    nodeId: pendingNode.id,
-                    error,
+              try {
+                const prepared = await prepareNodeImage(status.result);
+                const storyboardMetadataRaw = currentData.generationStoryboardMetadata as GenerationStoryboardMetadata | undefined;
+                const hasStoryboardMetadata = Boolean(
+                  storyboardMetadataRaw
+                  && Number.isFinite(storyboardMetadataRaw.gridRows)
+                  && Number.isFinite(storyboardMetadataRaw.gridCols)
+                  && Array.isArray(storyboardMetadataRaw.frameNotes)
+                );
+                let imageWithMetadata = prepared.imageUrl;
+                if (hasStoryboardMetadata && storyboardMetadataRaw) {
+                  imageWithMetadata = await embedStoryboardImageMetadata(prepared.imageUrl, {
+                    gridRows: Math.max(1, Math.round(storyboardMetadataRaw.gridRows)),
+                    gridCols: Math.max(1, Math.round(storyboardMetadataRaw.gridCols)),
+                    frameNotes: storyboardMetadataRaw.frameNotes,
+                  }).catch((error) => {
+                    console.warn('[GenerationJob] embed storyboard metadata failed', {
+                      nodeId: pendingNode.id,
+                      error,
+                    });
+                    return prepared.imageUrl;
                   });
-                  return prepared.imageUrl;
+                }
+                const previewWithMetadata = prepared.previewImageUrl === prepared.imageUrl
+                  ? imageWithMetadata
+                  : prepared.previewImageUrl;
+
+                updateNodeData(pendingNode.id, {
+                  imageUrl: imageWithMetadata,
+                  previewImageUrl: previewWithMetadata,
+                  aspectRatio: prepared.aspectRatio,
+                  isGenerating: false,
+                  generationStartedAt: null,
+                  generationJobId: null,
+                  generationProviderId: null,
+                  generationClientSessionId: null,
+                  generationStoryboardMetadata: undefined,
+                  generationError: null,
+                  generationErrorDetails: null,
+                  generationDebugContext: undefined,
+                });
+              } catch (prepareError) {
+                console.error('[GenerationJob] prepareNodeImage failed', {
+                  nodeId: pendingNode.id,
+                  jobId,
+                  result: status.result,
+                  error: prepareError,
+                });
+                const errorMessage = prepareError instanceof Error ? prepareError.message : '图片处理失败';
+                const generationClientSessionId = typeof currentData.generationClientSessionId === 'string'
+                  ? currentData.generationClientSessionId
+                  : '';
+                const shouldShowDialog = generationClientSessionId === CURRENT_RUNTIME_SESSION_ID;
+                if (shouldShowDialog) {
+                  const reportText = buildGenerationErrorReport({
+                    errorMessage,
+                    errorDetails: String(prepareError),
+                    context: currentData.generationDebugContext,
+                  });
+                  void showErrorDialog(errorMessage, t('common.error'), String(prepareError), reportText);
+                }
+                updateNodeData(pendingNode.id, {
+                  isGenerating: false,
+                  generationStartedAt: null,
+                  generationJobId: null,
+                  generationProviderId: null,
+                  generationClientSessionId: null,
+                  generationStoryboardMetadata: undefined,
+                  generationError: errorMessage,
+                  generationErrorDetails: String(prepareError),
                 });
               }
-              const previewWithMetadata = prepared.previewImageUrl === prepared.imageUrl
-                ? imageWithMetadata
-                : prepared.previewImageUrl;
-
-              updateNodeData(pendingNode.id, {
-                imageUrl: imageWithMetadata,
-                previewImageUrl: previewWithMetadata,
-                aspectRatio: prepared.aspectRatio,
-                isGenerating: false,
-                generationStartedAt: null,
-                generationJobId: null,
-                generationProviderId: null,
-                generationClientSessionId: null,
-                generationStoryboardMetadata: undefined,
-                generationError: null,
-                generationErrorDetails: null,
-                generationDebugContext: undefined,
-              });
               break;
             }
 

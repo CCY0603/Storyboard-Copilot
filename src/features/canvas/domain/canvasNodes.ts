@@ -56,9 +56,25 @@ export type ExportImageNodeResultKind =
   | 'storyboardSplitExport'
   | 'storyboardFrameEdit';
 
+export interface GenerationStoryboardMetadata {
+  gridRows: number;
+  gridCols: number;
+  frameNotes: string[];
+}
+
 export interface ExportImageNodeData extends NodeImageData {
   resultKind?: ExportImageNodeResultKind;
   model?: string;
+  isGenerating?: boolean;
+  generationStartedAt?: number | null;
+  generationDurationMs?: number;
+  generationJobId?: string | null;
+  generationProviderId?: string | null;
+  generationClientSessionId?: string | null;
+  generationStoryboardMetadata?: GenerationStoryboardMetadata | undefined;
+  generationError?: string | null;
+  generationErrorDetails?: string | null;
+  generationDebugContext?: unknown;
 }
 
 export interface GroupNodeData extends NodeDisplayData {
