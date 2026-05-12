@@ -39,7 +39,7 @@ type NodeHeaderProps = {
 export const NODE_HEADER_TONE_CLASS = 'text-[rgba(15,23,42,0.68)] dark:text-white/55';
 export const NODE_HEADER_TITLE_CLASS = 'text-[14px] font-normal';
 export const NODE_HEADER_META_CLASS = 'text-xs text-text-muted';
-export const NODE_HEADER_FLOATING_POSITION_CLASS = 'absolute -top-7 left-1 right-1 z-10';
+export const NODE_HEADER_FLOATING_POSITION_CLASS = 'absolute -top-12 left-1 right-1 z-10';
 const NODE_HEADER_TITLE_MAX_WIDTH_CLASS = 'max-w-[60%]';
 const NODE_HEADER_TITLE_FADE_STYLE: CSSProperties = {
   WebkitMaskImage: 'linear-gradient(to right, #000 0%, #000 82%, transparent 100%)',
@@ -282,7 +282,7 @@ export function NodeHeader({
           {rightSlot ? <div className="ml-2 flex shrink-0 items-baseline">{rightSlot}</div> : null}
         </div>
         {subtitle ? (
-          <div className={joinClasses('text-[11px] text-text-muted/80', subtitleClassName)}>
+          <div className={joinClasses('mt-1.5 flex justify-center px-2', subtitleClassName)}>
             {subtitle}
           </div>
         ) : null}

@@ -90,7 +90,11 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
     const provider = getModelProvider(modelId.split('/')[0] ?? '');
     const slashIndex = modelId.lastIndexOf('/');
     const shortId = slashIndex >= 0 ? modelId.slice(slashIndex + 1) : modelId;
-    return `${provider.label} · ${shortId}`;
+    return (
+      <span className="text-[8px] font-medium text-blue-400 dark:text-blue-300 whitespace-nowrap truncate">
+        {provider.label} · {shortId}
+      </span>
+    );
   }, [data, isExportResultNode]);
 
   useEffect(() => {
@@ -169,7 +173,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
   return (
     <div
       className={`
-        group relative overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/85 p-0 transition-colors duration-150
+        group relative flex flex-col overflow-hidden rounded-[var(--node-radius)] border bg-surface-dark/85 transition-colors duration-150
         ${hasGenerationError
           ? (selected
             ? 'border-red-400 shadow-[0_0_0_1px_rgba(248,113,113,0.42)]'
@@ -181,20 +185,27 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       style={{ width: resolvedWidth, height: resolvedHeight }}
       onClick={() => setSelectedNode(id)}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={isExportResultNode
-          ? <ImageIcon className="h-4 w-4" />
-          : <Sparkles className="h-4 w-4" />}
-        titleText={resolvedTitle}
-        titleClassName="inline-block max-w-[220px] truncate whitespace-nowrap align-bottom"
-        subtitle={modelSubtitle}
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
+      {/* 头部区域：标题和模型标签 */}
+      <div className="shrink-0 flex items-center gap-2 px-3 pt-3 pb-2 bg-gradient-to-b from-surface-dark/95 to-surface-dark/70 backdrop-blur-sm">
+        <NodeHeader
+          icon={isExportResultNode
+            ? <ImageIcon className="h-4 w-4" />
+            : <Sparkles className="h-4 w-4" />}
+          titleText={resolvedTitle}
+          titleClassName="flex-1 inline-block max-w-[160px] truncate whitespace-nowrap align-bottom"
+          editable
+          onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
+        />
+        {modelSubtitle && (
+          <span className="shrink-0 max-w-[100px]">
+            {modelSubtitle}
+          </span>
+        )}
+      </div>
 
+      {/* 图片区域 */}
       <div
-        className={`relative h-full w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-[rgba(127,29,29,0.2)]' : 'bg-bg-dark'}`}
+        className="flex-1 overflow-hidden bg-transparent"
       >
         {data.imageUrl ? (
           isVideoResult ? (
@@ -212,7 +223,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
             />
           )
         ) : hasGenerationError ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-red-300">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 bg-[rgba(127,29,29,0.2)] text-red-300">
             <AlertTriangle className="h-7 w-7 opacity-90" />
             <span className="text-center text-[12px] font-medium leading-5 text-red-200">
               {t('node.imageNode.generationFailed')}
