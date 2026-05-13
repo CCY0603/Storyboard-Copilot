@@ -262,7 +262,7 @@ function renderFrameDescriptionWithHighlights(description: string, maxImageCount
     segments.push(
       <span
         key={`ref-${matchStart}`}
-        className="relative z-0 text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/55 before:content-['']"
+        className="relative z-0 mr-1 inline-block text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[2px] before:-inset-y-[1px] before:-z-10 before:rounded-[6px] before:bg-accent/55 before:content-['']"
       >
         {matchText}
       </span>

@@ -179,7 +179,7 @@ function renderPromptWithHighlights(prompt: string, maxImageCount: number): Reac
     segments.push(
       <span
         key={`ref-${matchStart}`}
-        className="relative z-0 text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/55 before:content-['']"
+        className="relative z-0 mr-1 inline-block text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[2px] before:-inset-y-[1px] before:-z-10 before:rounded-[6px] before:bg-accent/55 before:content-['']"
       >
         {matchText}
       </span>
@@ -624,7 +624,14 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     const marker = `@图${imageIndex + 1}`;
     const currentPrompt = promptDraftRef.current;
     const cursor = pickerCursor ?? currentPrompt.length;
-    const { nextText: nextPrompt, nextCursor } = insertReferenceToken(currentPrompt, cursor, marker);
+    
+    // Remove the trigger '@' character before inserting the reference token
+    const textWithoutTriggerAt = cursor > 0 && currentPrompt[cursor - 1] === '@'
+      ? currentPrompt.slice(0, cursor - 1) + currentPrompt.slice(cursor)
+      : currentPrompt;
+    const adjustedCursor = cursor > 0 && currentPrompt[cursor - 1] === '@' ? cursor - 1 : cursor;
+    
+    const { nextText: nextPrompt, nextCursor } = insertReferenceToken(textWithoutTriggerAt, adjustedCursor, marker);
 
     setPromptDraft(nextPrompt);
     commitPromptDraft(nextPrompt);
@@ -638,6 +645,28 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       syncPromptHighlightScroll();
     });
   }, [commitPromptDraft, pickerCursor]);
+
+  const checkAndShowImagePicker = useCallback(() => {
+    if (incomingImages.length === 0) {
+      return;
+    }
+
+    const textarea = promptRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const cursor = textarea.selectionStart ?? promptDraftRef.current.length;
+    const textBeforeCursor = promptDraftRef.current.slice(0, cursor);
+    
+    // Check if the last character before cursor is '@'
+    if (textBeforeCursor.endsWith('@')) {
+      setPickerAnchor(resolvePickerAnchor(rootRef.current, textarea, cursor));
+      setPickerCursor(cursor);
+      setShowImagePicker(true);
+      setPickerActiveIndex(0);
+    }
+  }, [incomingImages.length]);
 
   const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Backspace' || event.key === 'Delete') {
@@ -712,6 +741,13 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     }
   };
 
+  const handlePromptCompositionEnd = () => {
+    // After composition ends (e.g., Chinese IME), check if we should show the picker
+    requestAnimationFrame(() => {
+      checkAndShowImagePicker();
+    });
+  };
+
   return (
     <div
       ref={rootRef}
@@ -762,6 +798,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
               commitPromptDraft(nextValue);
             }}
             onKeyDown={handlePromptKeyDown}
+            onCompositionEnd={handlePromptCompositionEnd}
             onScroll={syncPromptHighlightScroll}
             onMouseDown={(event) => event.stopPropagation()}
             placeholder={t('node.imageEdit.promptPlaceholder')}

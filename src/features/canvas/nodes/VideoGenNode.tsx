@@ -34,6 +34,12 @@ import {
   type GenerationDebugContext,
 } from '@/features/canvas/application/generationErrorReport';
 import {
+  findReferenceTokens,
+  insertReferenceToken,
+  removeTextRange,
+  resolveReferenceAwareDeleteRange,
+} from '@/features/canvas/application/referenceTokenEditing';
+import {
   DEFAULT_VIDEO_MODEL_ID,
   getVideoModel,
   listVideoModels,
@@ -46,6 +52,7 @@ import {
   NODE_CONTROL_PARAMS_CHIP_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
+import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { UiButton } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -59,6 +66,109 @@ type VideoGenNodeProps = NodeProps & {
 interface AspectRatioChoice {
   value: string;
   label: string;
+}
+
+interface PickerAnchor {
+  left: number;
+  top: number;
+}
+
+const PICKER_FALLBACK_ANCHOR: PickerAnchor = { left: 8, top: 8 };
+const PICKER_Y_OFFSET_PX = 20;
+
+function getTextareaCaretOffset(
+  textarea: HTMLTextAreaElement,
+  caretIndex: number
+): PickerAnchor {
+  const mirror = document.createElement('div');
+  const computed = window.getComputedStyle(textarea);
+  const mirrorStyle = mirror.style;
+
+  mirrorStyle.position = 'absolute';
+  mirrorStyle.visibility = 'hidden';
+  mirrorStyle.pointerEvents = 'none';
+  mirrorStyle.whiteSpace = 'pre-wrap';
+  mirrorStyle.overflowWrap = 'break-word';
+  mirrorStyle.wordBreak = 'break-word';
+  mirrorStyle.boxSizing = computed.boxSizing;
+  mirrorStyle.width = `${textarea.clientWidth}px`;
+  mirrorStyle.font = computed.font;
+  mirrorStyle.letterSpacing = computed.letterSpacing;
+  mirrorStyle.padding = computed.padding;
+  mirrorStyle.lineHeight = computed.lineHeight;
+
+  const textBeforeCaret = textarea.value.substring(0, caretIndex);
+  mirror.textContent = textBeforeCaret;
+
+  const span = document.createElement('span');
+  span.textContent = textarea.value.substring(caretIndex, caretIndex + 1) || '.';
+  mirror.appendChild(span);
+
+  document.body.appendChild(mirror);
+  const spanRect = span.getBoundingClientRect();
+  const mirrorRect = mirror.getBoundingClientRect();
+  document.body.removeChild(mirror);
+
+  return {
+    left: spanRect.left - mirrorRect.left,
+    top: spanRect.top - mirrorRect.top + spanRect.height,
+  };
+}
+
+function resolvePickerAnchor(
+  container: HTMLDivElement | null,
+  textarea: HTMLTextAreaElement,
+  caretIndex: number
+): PickerAnchor {
+  if (!container) {
+    return PICKER_FALLBACK_ANCHOR;
+  }
+
+  const containerRect = container.getBoundingClientRect();
+  const textareaRect = textarea.getBoundingClientRect();
+  const caretOffset = getTextareaCaretOffset(textarea, caretIndex);
+
+  return {
+    left: Math.max(0, textareaRect.left - containerRect.left + caretOffset.left),
+    top: Math.max(0, textareaRect.top - containerRect.top + caretOffset.top + PICKER_Y_OFFSET_PX),
+  };
+}
+
+function renderPromptWithHighlights(prompt: string, maxImageCount: number): React.ReactNode {
+  if (!prompt) {
+    return ' ';
+  }
+
+  const segments: React.ReactNode[] = [];
+  let lastIndex = 0;
+  const referenceTokens = findReferenceTokens(prompt, maxImageCount);
+  for (const token of referenceTokens) {
+    const matchStart = token.start;
+    const matchText = token.token;
+
+    if (matchStart > lastIndex) {
+      segments.push(
+        <span key={`plain-${lastIndex}`}>{prompt.slice(lastIndex, matchStart)}</span>
+      );
+    }
+
+    segments.push(
+      <span
+        key={`ref-${matchStart}`}
+        className="relative z-0 mr-1 inline-block text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[2px] before:-inset-y-[1px] before:-z-10 before:rounded-[6px] before:bg-accent/55 before:content-['']"
+      >
+        {matchText}
+      </span>
+    );
+
+    lastIndex = matchStart + matchText.length;
+  }
+
+  if (lastIndex < prompt.length) {
+    segments.push(<span key={`plain-${lastIndex}`}>{prompt.slice(lastIndex)}</span>);
+  }
+
+  return segments;
 }
 
 const VIDEO_GEN_NODE_MIN_WIDTH = 400;
@@ -82,8 +192,14 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const [error, setError] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const promptHighlightRef = useRef<HTMLDivElement>(null);
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
   const promptDraftRef = useRef(promptDraft);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+  const [pickerCursor, setPickerCursor] = useState<number | null>(null);
+  const [pickerActiveIndex, setPickerActiveIndex] = useState(0);
+  const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>(PICKER_FALLBACK_ANCHOR);
 
   const nodes = useCanvasStore((state) => state.nodes);
   const edges = useCanvasStore((state) => state.edges);
@@ -97,6 +213,20 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const incomingImages = useMemo(
     () => graphImageResolver.collectInputImages(id, nodes, edges),
     [id, nodes, edges]
+  );
+
+  const incomingImageItems = useMemo(
+    () =>
+      incomingImages.map((imageUrl, index) => ({
+        imageUrl,
+        displayUrl: resolveImageDisplayUrl(imageUrl),
+        label: `图${index + 1}`,
+      })),
+    [incomingImages]
+  );
+  const incomingImageViewerList = useMemo(
+    () => incomingImageItems.map((item) => resolveImageDisplayUrl(item.imageUrl)),
+    [incomingImageItems]
   );
 
   const videoModels = useMemo(() => listVideoModels(), []);
@@ -183,6 +313,133 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     promptDraftRef.current = nextPrompt;
     updateNodeData(id, { prompt: nextPrompt });
   }, [id, updateNodeData]);
+
+  const syncPromptHighlightScroll = () => {
+    if (!promptRef.current || !promptHighlightRef.current) {
+      return;
+    }
+
+    promptHighlightRef.current.scrollTop = promptRef.current.scrollTop;
+    promptHighlightRef.current.scrollLeft = promptRef.current.scrollLeft;
+  };
+
+  const insertImageReference = useCallback((imageIndex: number) => {
+    const marker = `@图${imageIndex + 1}`;
+    const currentPrompt = promptDraftRef.current;
+    const cursor = pickerCursor ?? currentPrompt.length;
+    
+    // Remove the trigger '@' character before inserting the reference token
+    const textWithoutTriggerAt = cursor > 0 && currentPrompt[cursor - 1] === '@'
+      ? currentPrompt.slice(0, cursor - 1) + currentPrompt.slice(cursor)
+      : currentPrompt;
+    const adjustedCursor = cursor > 0 && currentPrompt[cursor - 1] === '@' ? cursor - 1 : cursor;
+    
+    const { nextText: nextPrompt, nextCursor } = insertReferenceToken(textWithoutTriggerAt, adjustedCursor, marker);
+
+    setPromptDraft(nextPrompt);
+    commitPromptDraft(nextPrompt);
+    setShowImagePicker(false);
+    setPickerCursor(null);
+    setPickerActiveIndex(0);
+
+    requestAnimationFrame(() => {
+      promptRef.current?.focus();
+      promptRef.current?.setSelectionRange(nextCursor, nextCursor);
+      syncPromptHighlightScroll();
+    });
+  }, [commitPromptDraft, pickerCursor]);
+
+  const checkAndShowImagePicker = useCallback(() => {
+    if (incomingImages.length === 0) {
+      return;
+    }
+
+    const textarea = promptRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const cursor = textarea.selectionStart ?? promptDraftRef.current.length;
+    const textBeforeCursor = promptDraftRef.current.slice(0, cursor);
+    
+    // Check if the last character before cursor is '@'
+    if (textBeforeCursor.endsWith('@')) {
+      setPickerAnchor(resolvePickerAnchor(rootRef.current, textarea, cursor));
+      setPickerCursor(cursor);
+      setShowImagePicker(true);
+      setPickerActiveIndex(0);
+    }
+  }, [incomingImages.length]);
+
+  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      const currentPrompt = promptDraftRef.current;
+      const selectionStart = event.currentTarget.selectionStart ?? currentPrompt.length;
+      const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
+      const deletionDirection = event.key === 'Backspace' ? 'backward' : 'forward';
+      const deleteRange = resolveReferenceAwareDeleteRange(
+        currentPrompt,
+        selectionStart,
+        selectionEnd,
+        deletionDirection,
+        incomingImages.length
+      );
+      if (deleteRange) {
+        event.preventDefault();
+        const { nextText, nextCursor } = removeTextRange(currentPrompt, deleteRange);
+        setPromptDraft(nextText);
+        commitPromptDraft(nextText);
+        requestAnimationFrame(() => {
+          promptRef.current?.focus();
+          promptRef.current?.setSelectionRange(nextCursor, nextCursor);
+          syncPromptHighlightScroll();
+        });
+        return;
+      }
+    }
+
+    if (showImagePicker && incomingImages.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setPickerActiveIndex((previous) => (previous + 1) % incomingImages.length);
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setPickerActiveIndex((previous) =>
+          previous === 0 ? incomingImages.length - 1 : previous - 1
+        );
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        insertImageReference(pickerActiveIndex);
+        return;
+      }
+    }
+
+    if (event.key === 'Escape' && showImagePicker) {
+      event.preventDefault();
+      setShowImagePicker(false);
+      setPickerCursor(null);
+      setPickerActiveIndex(0);
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      void handleGenerate();
+    }
+  };
+
+  const handlePromptCompositionEnd = () => {
+    // After composition ends (e.g., Chinese IME), check if we should show the picker
+    requestAnimationFrame(() => {
+      checkAndShowImagePicker();
+    });
+  };
 
   useEffect(() => {
     if (data.model !== selectedModel.id) {
@@ -328,13 +585,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     updateNodeData,
   ]);
 
-  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-      event.preventDefault();
-      void handleGenerate();
-    }
-  };
-
   return (
     <div
       ref={rootRef}
@@ -378,18 +628,75 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
       {/* Prompt Input */}
       <div className="relative min-h-[80px] flex-1 rounded-lg border border-[rgba(255,255,255,0.1)] bg-bg-dark/45 p-2">
-        <textarea
-          value={promptDraft}
-          onChange={(event) => {
-            const nextValue = event.target.value;
-            setPromptDraft(nextValue);
-            commitPromptDraft(nextValue);
-          }}
-          onKeyDown={handlePromptKeyDown}
-          onMouseDown={(event) => event.stopPropagation()}
-          placeholder={t('node.videoGen.promptPlaceholder')}
-          className="ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-text-dark outline-none placeholder:text-text-muted/80"
-        />
+        <div className="relative h-full min-h-0">
+          <div
+            ref={promptHighlightRef}
+            aria-hidden="true"
+            className="ui-scrollbar pointer-events-none absolute inset-0 overflow-y-auto overflow-x-hidden text-sm leading-6 text-text-dark"
+            style={{ scrollbarGutter: 'stable' }}
+          >
+            <div className="min-h-full whitespace-pre-wrap break-words px-1 py-0.5">
+              {renderPromptWithHighlights(promptDraft, incomingImages.length)}
+            </div>
+          </div>
+
+          <textarea
+            ref={promptRef}
+            value={promptDraft}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setPromptDraft(nextValue);
+              commitPromptDraft(nextValue);
+            }}
+            onKeyDown={handlePromptKeyDown}
+            onCompositionEnd={handlePromptCompositionEnd}
+            onScroll={syncPromptHighlightScroll}
+            onMouseDown={(event) => event.stopPropagation()}
+            placeholder={t('node.videoGen.promptPlaceholder')}
+            className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-transparent caret-text-dark outline-none placeholder:text-text-muted/80 focus:border-transparent whitespace-pre-wrap break-words"
+            style={{ scrollbarGutter: 'stable' }}
+          />
+        </div>
+
+        {showImagePicker && incomingImageItems.length > 0 && (
+          <div
+            className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-xl border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+            style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onWheelCapture={(event) => event.stopPropagation()}
+          >
+            <div
+              className="ui-scrollbar nowheel max-h-[180px] overflow-y-auto"
+              onWheelCapture={(event) => event.stopPropagation()}
+            >
+              {incomingImageItems.map((item, index) => (
+                <button
+                  key={`${item.imageUrl}-${index}`}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    insertImageReference(index);
+                  }}
+                  onMouseEnter={() => setPickerActiveIndex(index)}
+                  className={`flex w-full items-center gap-2 border border-transparent bg-bg-dark/70 px-2 py-2 text-left text-sm text-text-dark transition-colors hover:border-[rgba(255,255,255,0.18)] ${pickerActiveIndex === index
+                      ? 'border-[rgba(255,255,255,0.24)] bg-bg-dark'
+                      : ''
+                    }`}
+                >
+                  <CanvasNodeImage
+                    src={item.displayUrl}
+                    alt={item.label}
+                    viewerSourceUrl={resolveImageDisplayUrl(item.imageUrl)}
+                    viewerImageList={incomingImageViewerList}
+                    className="h-8 w-8 rounded object-cover"
+                    draggable={false}
+                  />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
