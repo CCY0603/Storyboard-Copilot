@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
-use tracing::info;
+use tracing::{info, error};
 
 const STORYBOARD_METADATA_PNG_TEXT_KEY: &str = "StoryboardCopilotMetadata";
 const FAST_PREVIEW_BYPASS_MAX_BYTES: usize = 2_000_000;
@@ -1149,11 +1149,9 @@ fn resolve_images_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
-
     let images_dir = app_data_dir.join("images");
     std::fs::create_dir_all(&images_dir)
         .map_err(|e| format!("Failed to create images dir: {}", e))?;
-
     Ok(images_dir)
 }
 
@@ -1161,11 +1159,21 @@ fn persist_image_bytes(app: &AppHandle, bytes: &[u8], extension: &str) -> Result
     let images_dir = resolve_images_dir(app)?;
     let digest = md5::compute(bytes);
     let filename = format!("{:x}.{}", digest, normalize_extension(extension));
-    let output_path = images_dir.join(filename);
+    let output_path = images_dir.join(&filename);
+
+    info!("Attempting to persist image: {} ({} bytes, extension: {})", filename, bytes.len(), extension);
 
     if !output_path.exists() {
+        info!("Image file does not exist, writing new file: {}", output_path.display());
         std::fs::write(&output_path, bytes)
-            .map_err(|e| format!("Failed to persist generated image: {}", e))?;
+            .map_err(|e| {
+                let error_msg = format!("Failed to persist generated image: {}", e);
+                error!("{}", error_msg);
+                error_msg
+            })?;
+        info!("Successfully wrote image file: {}", output_path.display());
+    } else {
+        info!("Image file already exists, reusing: {}", output_path.display());
     }
 
     Ok(output_path.to_string_lossy().to_string())
@@ -1439,7 +1447,8 @@ pub async fn persist_image_source(app: AppHandle, source: String) -> Result<Stri
             .map_err(|e| format!("Failed to persist image source: {}", e))?;
     }
 
-    Ok(output_path.to_string_lossy().to_string())
+    // 统一使用正斜杠，确保 Tauri asset 协议能正确识别路径
+    Ok(output_path.to_string_lossy().replace('\\', "/"))
 }
 
 #[tauri::command]

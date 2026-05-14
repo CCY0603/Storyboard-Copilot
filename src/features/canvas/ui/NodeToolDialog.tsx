@@ -137,11 +137,11 @@ export function NodeToolDialog() {
     }
 
     let cancelled = false;
-    const image = new Image();
     const displayImageUrl = resolveImageDisplayUrl(sourceImageUrl);
 
     setIsSplitImageReady(false);
 
+    const image = new Image();
     image.onload = () => {
       if (cancelled) {
         return;

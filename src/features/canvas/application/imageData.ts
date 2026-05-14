@@ -104,7 +104,20 @@ export function isLikelyLocalImagePath(imageUrl: string): boolean {
     return false;
   }
 
-  return LOCAL_PATH_PREFIX_PATTERN.test(imageUrl);
+  if (LOCAL_PATH_PREFIX_PATTERN.test(imageUrl)) {
+    return true;
+  }
+
+  try {
+    const decoded = decodeURIComponent(imageUrl);
+    if (LOCAL_PATH_PREFIX_PATTERN.test(decoded)) {
+      return true;
+    }
+  } catch {
+    // ignore decode errors
+  }
+
+  return false;
 }
 
 export function resolveImageDisplayUrl(imageUrl: string): string {
@@ -113,7 +126,6 @@ export function resolveImageDisplayUrl(imageUrl: string): string {
     if (!isTauri()) {
       return imageUrl;
     }
-
     try {
       const parsed = new URL(imageUrl);
       const decodedPathname = decodeURIComponent(parsed.pathname);
@@ -126,15 +138,12 @@ export function resolveImageDisplayUrl(imageUrl: string): string {
       return imageUrl;
     }
   }
-
   if (!isLikelyLocalImagePath(imageUrl)) {
     return imageUrl;
   }
-
   if (!isTauri()) {
     return imageUrl;
   }
-
   return convertFileSrc(imageUrl);
 }
 
@@ -391,23 +400,37 @@ export async function prepareNodeImage(
   }
 
   const started = performance.now();
+  console.info('[imageData] prepareNodeImage called with source:', trimmedImageUrl.substring(0, 100));
+  
   if (isTauri()) {
     const safeMaxDimension = Math.max(64, Math.floor(maxPreviewDimension));
     try {
       const tauriStarted = performance.now();
+      console.info('[imageData] Attempting Tauri prepareNodeImageSource...');
       const prepared = await prepareNodeImageSource(trimmedImageUrl, safeMaxDimension);
       console.info(
-        `[upload-perf][imageData] prepareNodeImage tauri-source elapsed=${Math.round(performance.now() - tauriStarted)}ms total=${Math.round(performance.now() - started)}ms`
+        `[upload-perf][imageData] prepareNodeImage tauri-source elapsed=${Math.round(performance.now() - tauriStarted)}ms total=${Math.round(performance.now() - started)}ms`,
+        'result:', prepared
       );
+      
+      if (!prepared.imagePath || !prepared.previewImagePath) {
+        throw createImagePipelineError(
+          'Tauri 返回的图片路径不完整',
+          `imagePath=${prepared.imagePath}, previewImagePath=${prepared.previewImagePath}`
+        );
+      }
+      
       return {
         imageUrl: prepared.imagePath,
         previewImageUrl: prepared.previewImagePath,
         aspectRatio: prepared.aspectRatio,
       };
     } catch (error) {
+      console.error('[imageData] prepareNodeImage tauri-source failed with error:', error);
       console.warn('[imageData] prepareNodeImage tauri-source failed, fallback to browser path', {
         source: trimmedImageUrl,
-        error,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
       });
       // fallback to browser path for compatibility
     }

@@ -486,8 +486,18 @@ export function Canvas() {
             }
 
             if (status.status === 'succeeded' && typeof status.result === 'string' && status.result.trim()) {
+              console.info('[GenerationJob] Generation succeeded, processing result for node:', pendingNode.id);
+              console.info('[GenerationJob] Result URL:', status.result.substring(0, 100));
+              
               try {
+                console.info('[GenerationJob] Starting prepareNodeImage...');
                 const prepared = await prepareNodeImage(status.result);
+                console.info('[GenerationJob] prepareNodeImage completed successfully:', {
+                  imageUrl: prepared.imageUrl,
+                  previewImageUrl: prepared.previewImageUrl,
+                  aspectRatio: prepared.aspectRatio,
+                });
+                
                 const storyboardMetadataRaw = currentData.generationStoryboardMetadata as GenerationStoryboardMetadata | undefined;
                 const hasStoryboardMetadata = Boolean(
                   storyboardMetadataRaw
@@ -497,6 +507,7 @@ export function Canvas() {
                 );
                 let imageWithMetadata = prepared.imageUrl;
                 if (hasStoryboardMetadata && storyboardMetadataRaw) {
+                  console.info('[GenerationJob] Embedding storyboard metadata...');
                   imageWithMetadata = await embedStoryboardImageMetadata(prepared.imageUrl, {
                     gridRows: Math.max(1, Math.round(storyboardMetadataRaw.gridRows)),
                     gridCols: Math.max(1, Math.round(storyboardMetadataRaw.gridCols)),
@@ -513,6 +524,12 @@ export function Canvas() {
                   ? imageWithMetadata
                   : prepared.previewImageUrl;
 
+                console.info('[GenerationJob] Updating node data with prepared image:', {
+                  nodeId: pendingNode.id,
+                  imageUrl: imageWithMetadata,
+                  previewImageUrl: previewWithMetadata,
+                });
+                
                 updateNodeData(pendingNode.id, {
                   imageUrl: imageWithMetadata,
                   previewImageUrl: previewWithMetadata,
@@ -527,12 +544,16 @@ export function Canvas() {
                   generationErrorDetails: null,
                   generationDebugContext: undefined,
                 });
+                
+                console.info('[GenerationJob] Node data updated successfully for node:', pendingNode.id);
               } catch (prepareError) {
                 console.error('[GenerationJob] prepareNodeImage failed', {
                   nodeId: pendingNode.id,
                   jobId,
                   result: status.result,
                   error: prepareError,
+                  errorMessage: prepareError instanceof Error ? prepareError.message : String(prepareError),
+                  stack: prepareError instanceof Error ? prepareError.stack : undefined,
                 });
                 const errorMessage = prepareError instanceof Error ? prepareError.message : '图片处理失败';
                 const generationClientSessionId = typeof currentData.generationClientSessionId === 'string'
@@ -547,7 +568,18 @@ export function Canvas() {
                   });
                   void showErrorDialog(errorMessage, t('common.error'), String(prepareError), reportText);
                 }
+                // Fallback: 即使处理失败,也尝试使用原始结果作为 imageUrl,避免完全空白
+                const fallbackImageUrl = typeof status.result === 'string' && status.result.trim()
+                  ? status.result.trim()
+                  : null;
+                console.warn('[GenerationJob] using fallback image URL', {
+                  nodeId: pendingNode.id,
+                  fallbackUrl: fallbackImageUrl ? `${fallbackImageUrl.substring(0, 80)}...` : null,
+                  originalError: errorMessage,
+                });
                 updateNodeData(pendingNode.id, {
+                  imageUrl: fallbackImageUrl,
+                  previewImageUrl: fallbackImageUrl,
                   isGenerating: false,
                   generationStartedAt: null,
                   generationJobId: null,

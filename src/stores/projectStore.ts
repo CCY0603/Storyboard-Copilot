@@ -95,16 +95,42 @@ function decodeImageReference(
   imageUrl: string | null | undefined,
   imagePool: string[] | undefined
 ): string | null | undefined {
-  if (typeof imageUrl !== 'string' || !imagePool || !imageUrl.startsWith(IMAGE_REF_PREFIX)) {
+  if (typeof imageUrl !== 'string') {
     return imageUrl;
+  }
+
+  if (!imageUrl.startsWith(IMAGE_REF_PREFIX)) {
+    return imageUrl;
+  }
+
+  if (!imagePool || imagePool.length === 0) {
+    console.warn('[decodeImageReference] imagePool is empty or undefined, cannot decode reference:', imageUrl);
+    return null;
   }
 
   const index = Number.parseInt(imageUrl.slice(IMAGE_REF_PREFIX.length), 10);
   if (!Number.isFinite(index) || index < 0) {
-    return imageUrl;
+    console.warn('[decodeImageReference] invalid reference index:', imageUrl);
+    return null;
   }
 
-  return imagePool[index] ?? null;
+  let decodedUrl = imagePool[index];
+  if (!decodedUrl) {
+    console.warn('[decodeImageReference] reference index out of bounds:', imageUrl, 'pool size:', imagePool.length);
+    return null;
+  }
+
+  try {
+    const decoded = decodeURIComponent(decodedUrl);
+    if (decoded !== decodedUrl) {
+      console.debug('[decodeImageReference] decoded URL-encoded path:', decodedUrl, '->', decoded);
+      decodedUrl = decoded;
+    }
+  } catch {
+    // ignore decode errors
+  }
+
+  return decodedUrl;
 }
 
 function mapNodeImageReferences(
@@ -188,12 +214,23 @@ function encodeProject(project: Project): PersistedProject {
 }
 
 function decodeProject(project: PersistedProject): Project {
-  const decode = (imageUrl: string | null | undefined) =>
-    decodeImageReference(imageUrl, project.imagePool);
+  console.info('[decodeProject] called with imagePool:', project.imagePool?.length ?? 0, 'items');
+  
+  const decode = (imageUrl: string | null | undefined) => {
+    const result = decodeImageReference(imageUrl, project.imagePool);
+    if (typeof imageUrl === 'string' && imageUrl.startsWith(IMAGE_REF_PREFIX)) {
+      console.debug('[decodeProject] decoded reference:', imageUrl, '->', result);
+    }
+    return result;
+  };
 
+  const decodedNodes = mapNodeImageReferences(project.nodes, decode);
+  
+  console.info('[decodeProject] decoded', decodedNodes.length, 'nodes');
+  
   return {
     ...project,
-    nodes: mapNodeImageReferences(project.nodes, decode),
+    nodes: decodedNodes,
     history: mapHistoryImageReferences(project.history, decode),
   };
 }
@@ -207,66 +244,15 @@ function safeParseJson<T>(value: string, fallback: T): T {
 }
 
 function extractImagePoolFromHistoryJson(historyJson: string): string[] {
-  const imagePoolKey = '"imagePool"';
-  const keyIndex = historyJson.indexOf(imagePoolKey);
-  if (keyIndex < 0) {
+  try {
+    const parsed = JSON.parse(historyJson) as { imagePool?: string[] };
+    if (Array.isArray(parsed.imagePool)) {
+      return parsed.imagePool.filter((item): item is string => typeof item === 'string');
+    }
+    return [];
+  } catch {
     return [];
   }
-
-  const arrayStart = historyJson.indexOf('[', keyIndex + imagePoolKey.length);
-  if (arrayStart < 0) {
-    return [];
-  }
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  let arrayEnd = -1;
-
-  for (let index = arrayStart; index < historyJson.length; index += 1) {
-    const char = historyJson[index];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === '\\') {
-        escaped = true;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (char === '[') {
-      depth += 1;
-      continue;
-    }
-
-    if (char === ']') {
-      depth -= 1;
-      if (depth === 0) {
-        arrayEnd = index;
-        break;
-      }
-    }
-  }
-
-  if (arrayEnd < 0) {
-    return [];
-  }
-
-  const rawArrayJson = historyJson.slice(arrayStart, arrayEnd + 1);
-  const parsed = safeParseJson<unknown>(rawArrayJson, []);
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-
-  return parsed.filter((item): item is string => typeof item === 'string');
 }
 
 function toProjectSummary(record: ProjectSummaryRecord): ProjectSummary {

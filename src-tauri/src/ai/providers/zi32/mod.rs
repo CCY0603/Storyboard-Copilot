@@ -878,10 +878,12 @@ impl AIProvider for Zi32Provider {
                 self.generate_gemini_image(&request, raw_model, &api_key)
                     .await?
             } else if has_references {
-                self.generate_image_edit(&request, raw_model, "1024x1024".to_string(), &api_key)
+                let size_param = Self::resolve_size_param(&request.size, &request.aspect_ratio);
+                self.generate_image_edit(&request, raw_model, size_param, &api_key)
                     .await?
             } else {
-                self.generate_text_to_image(&request, raw_model, "1024x1024".to_string(), &api_key)
+                let size_param = Self::resolve_size_param(&request.size, &request.aspect_ratio);
+                self.generate_text_to_image(&request, raw_model, size_param, &api_key)
                     .await?
             };
             Ok(ProviderTaskSubmission::Succeeded(result))
@@ -961,10 +963,12 @@ impl AIProvider for Zi32Provider {
                 self.generate_gemini_image(&request, raw_model, &api_key)
                     .await
             } else if has_references {
-                self.generate_image_edit(&request, raw_model, "1024x1024".to_string(), &api_key)
+                let size_param = Self::resolve_size_param(&request.size, &request.aspect_ratio);
+                self.generate_image_edit(&request, raw_model, size_param, &api_key)
                     .await
             } else {
-                self.generate_text_to_image(&request, raw_model, "1024x1024".to_string(), &api_key)
+                let size_param = Self::resolve_size_param(&request.size, &request.aspect_ratio);
+                self.generate_text_to_image(&request, raw_model, size_param, &api_key)
                     .await
             }
         }
